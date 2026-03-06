@@ -1,0 +1,16 @@
+[project]
+name = "agent-trace-backend"
+version = "0.1.0"
+description = "Scaffold-only backend for agent-trace"
+requires-python = ">=3.11"
+dependencies = [
+  "alembic>=1.16.5",
+  "fastapi>=0.116.1",
+  "psycopg[binary]>=3.2.9",
+  "uvicorn[standard]>=0.35.0",
+]
+
+[dependency-groups]
+dev = [
+  "pytest>=8.4.1",
+]
