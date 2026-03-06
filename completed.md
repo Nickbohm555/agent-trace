@@ -1393,3 +1393,64 @@
 
 ### Notes
 - Section E10 complete on March 6, 2026.
+
+## Section E11: E2E (mocked) — 422 validation error shows parsed message
+
+**Single goal:** Mock fetch for 422 with body.detail as array of objects (e.g. msg: "Value error, Provide at least one of run_id or trace_ids."). Assert Job Status "Failed" and the parsed error message is visible in the UI.
+
+**Details:**
+- Same as existing test "renders backend error message when run fails": mock ok: false, status: 422, json with detail array. Assert "Failed" and the extracted message text. Ensures frontend parseErrorMessage (array detail) is covered and UI shows it.
+
+**Tech stack and dependencies**
+- Vitest, @testing-library/react. No new packages; test may already exist.
+
+**Files and purpose**
+
+| File | Purpose |
+|------|--------|
+| src/frontend/src/App.test.tsx | Retained existing test: 422 array detail -> Failed + parsed message. |
+
+**How to test:** `npm run test`; assert Failed and error message text.
+
+### Completed work
+- Searched for reusable existing coverage before any changes:
+  - `src/frontend/src/App.test.tsx`
+  - `src/frontend/src/App.tsx`
+  - `src/frontend/src/utils/api.ts`
+- Confirmed E11 was already implemented:
+  - `parseErrorMessage` handles `detail` arrays and extracts first `msg`.
+  - test `renders backend error message when run fails` already mocks `422` + `detail` array and asserts `Failed` + parsed message text.
+- No code changes were required to satisfy Section E11.
+
+### Validation commands and outcomes
+- Fresh full restart before task work:
+  - `docker compose down -v --rmi all`
+  - `docker compose build`
+  - `docker compose up -d`
+  - Outcome: success; rebuilt and relaunched clean stack.
+- Section-targeted frontend test:
+  - `docker compose exec frontend npm run test -- src/App.test.tsx`
+  - Outcome: success (`1 passed file`, `6 passed tests`).
+- Frontend task visibility check for debug workflow:
+  - `curl -sS http://127.0.0.1:9223/json/list`
+  - Outcome: success; returned JSON target list including `webSocketDebuggerUrl`.
+- Post-validation service refresh:
+  - `docker compose restart frontend`
+  - Outcome: success.
+
+### Useful logs captured
+- Frontend test logs:
+  - `stderr | src/App.test.tsx > App tracer run UI > renders backend error message when run fails`
+  - `Tracer run failed { error: 'Value error, Provide at least one of run_id or trace_ids.' }`
+  - `✓ src/App.test.tsx (6 tests)`
+  - `Tests  6 passed (6)`
+- Backend logs (`docker compose logs --tail=80 backend`):
+  - Alembic upgrade executed.
+  - Uvicorn startup complete and serving on `0.0.0.0:8000`.
+- Frontend logs (`docker compose logs --tail=80 frontend`):
+  - Vite dev server ready on `http://localhost:5173/`.
+- DB logs (`docker compose logs --tail=80 db`):
+  - PostgreSQL ready to accept connections.
+
+### Notes
+- Section E11 complete on March 6, 2026.
