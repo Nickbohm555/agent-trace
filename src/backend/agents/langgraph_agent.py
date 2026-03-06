@@ -4,7 +4,7 @@ import logging
 from collections.abc import Callable
 from typing import Any, Literal
 
-from langchain_core.messages import AIMessage, AnyMessage
+from langchain_core.messages import AIMessage, AnyMessage, SystemMessage
 from langchain_core.tools import BaseTool
 from langgraph.graph import END, START, StateGraph
 from langgraph.prebuilt import ToolNode
@@ -16,6 +16,7 @@ from agents.tracer_config import (
     resolve_reasoning_level,
     resolve_reasoning_phase,
 )
+from agents.tracer_prompts import build_tracer_system_prompt
 from agents.tracer_state import TracerState
 from services.sandbox_service import SandboxService
 from services.trace_storage_service import TraceStorageService
@@ -53,6 +54,16 @@ def default_model_invoke(_: TracerState, __: ReasoningPhase, ___: ReasoningLevel
     return AIMessage(content="Tracer graph skeleton response.")
 
 
+def _inject_system_prompt(state: TracerState, system_prompt: str) -> TracerState:
+    messages: list[AnyMessage] = list(state.get("messages", []))
+    if messages and isinstance(messages[0], SystemMessage):
+        return state
+
+    prompted_state: TracerState = dict(state)
+    prompted_state["messages"] = [SystemMessage(content=system_prompt), *messages]
+    return prompted_state
+
+
 def build_tracer_graph(
     agent_node: Callable[[TracerState], dict[str, list[AnyMessage]]] | None = None,
     *,
@@ -61,6 +72,7 @@ def build_tracer_graph(
     trace_storage_service: TraceStorageService | None = None,
     sandbox_service: SandboxService | None = None,
     tools: list[BaseTool] | None = None,
+    system_prompt: str | None = None,
 ) -> Any:
     """Build the Section 4 LangGraph skeleton for the tracer deep-agent loop."""
     resolved_tools = list(tools or [])
@@ -75,6 +87,7 @@ def build_tracer_graph(
     if agent_node is None:
         selected_reasoning_config = reasoning_config or TracerReasoningConfig()
         selected_model_invoke = model_invoke or default_model_invoke
+        selected_system_prompt = system_prompt or build_tracer_system_prompt()
 
         def configured_agent_node(state: TracerState) -> dict[str, list[AnyMessage]]:
             phase = resolve_reasoning_phase(state.get("reasoning_phase"))
@@ -82,11 +95,12 @@ def build_tracer_graph(
                 state.get("reasoning_level"),
                 fallback=selected_reasoning_config.level_for_phase(phase),
             )
+            prompted_state = _inject_system_prompt(state, selected_system_prompt)
             logger.info(
                 "Executing tracer agent with reasoning configuration",
                 extra={"phase": phase, "reasoning_level": level, "run_id": state.get("run_id")},
             )
-            return {"messages": [selected_model_invoke(state, phase, level)]}
+            return {"messages": [selected_model_invoke(prompted_state, phase, level)]}
 
         resolved_agent_node = configured_agent_node
     else:

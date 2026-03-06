@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from langchain_core.messages import AIMessage, ToolMessage
+from langchain_core.messages import AIMessage, SystemMessage, ToolMessage
 from langchain_core.tools import StructuredTool
 
 from agents.langgraph_agent import build_tracer_graph, should_continue
@@ -89,6 +89,27 @@ def test_build_tracer_graph_state_level_override_wins_over_phase_defaults() -> N
     )
 
     assert captures == [("planning", "medium")]
+
+
+def test_build_tracer_graph_injects_tracer_system_prompt_for_model_adapter() -> None:
+    captured_first_message: SystemMessage | None = None
+
+    def model_invoke(state: dict[str, object], _: str, __: str) -> AIMessage:
+        nonlocal captured_first_message
+        first_message = state["messages"][0]
+        assert isinstance(first_message, SystemMessage)
+        captured_first_message = first_message
+        return AIMessage(content="System prompt acknowledged")
+
+    graph = build_tracer_graph(model_invoke=model_invoke)
+    result = graph.invoke({"messages": [], "run_id": "run-prompt", "current_trace_summary": None})
+
+    assert captured_first_message is not None
+    assert "Planning & Discovery phase" in captured_first_message.content
+    assert "Build phase" in captured_first_message.content
+    assert "Verify phase" in captured_first_message.content
+    assert "Fix phase" in captured_first_message.content
+    assert result["messages"][0].content == "System prompt acknowledged"
 
 
 def test_build_tracer_graph_executes_tool_node_when_tool_calls_present() -> None:

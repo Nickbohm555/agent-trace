@@ -344,3 +344,43 @@
 **Operational note:**
 - Changed container: `backend`.
 - Restarted backend after implementation (`docker compose restart backend`) and verified `docker compose ps` plus logs for `backend`, `frontend`, `db`, and `chrome`.
+
+## Section 10: Tracer system prompt – plan, build, verify, fix
+
+**Depends on:** Section 4 (graph to inject prompt).
+
+**Single goal:** Implement the tracer’s system prompt with Planning & Discovery, Build, Verify, Fix and a strong focus on testing (per article).
+
+**Deep-agent capability:** System prompts — plan–build–verify–fix; self-verification and testing as first-class phases.
+
+**Details implemented:**
+- Added `src/backend/agents/tracer_prompts.py` with a dedicated tracer system prompt builder containing explicit `Planning & Discovery`, `Build`, `Verify`, and `Fix` phases.
+- Included verification guidance that requires checking outputs against the requested task specification (not against agent-written code assumptions).
+- Updated `src/backend/agents/langgraph_agent.py` to load and inject the tracer system prompt into agent state as a `SystemMessage` before model invocation.
+- Preserved existing graph/tool architecture; prompt injection is additive and isolated to configured agent execution.
+- Added prompt-coverage tests in `src/backend/tests/agents/test_tracer_prompts.py`.
+- Added graph behavior test in `src/backend/tests/agents/test_langgraph_agent.py` to assert system prompt injection into the model adapter state.
+
+**Test results:**
+- `docker compose exec backend uv run pytest tests/agents/test_langgraph_agent.py tests/agents/test_tracer_prompts.py`
+- Result: `10 passed in 1.30s` on 2026-03-06.
+
+**Useful logs (2026-03-06):**
+- Full app fresh restart completed before work:
+  - `docker compose down -v --rmi all`
+  - `docker compose build`
+  - `docker compose up -d`
+- Backend:
+  - `INFO  [alembic.runtime.migration] Running upgrade  -> 20260306_01, add trace storage tables`
+  - `INFO:     Uvicorn running on http://0.0.0.0:8000`
+  - `INFO:     Application startup complete.`
+  - `WARNING:  WatchFiles detected changes in 'agents/tracer_prompts.py'. Reloading...` (expected during iteration)
+- Frontend:
+  - `VITE v7.3.1  ready in 772 ms`
+  - `Local: http://localhost:5173/`
+- DB:
+  - `database system is ready to accept connections`
+
+**Operational note:**
+- Changed container: `backend`.
+- Restarted backend (`docker compose restart backend`) after implementation and re-checked `docker compose ps` plus backend/frontend/db logs.
