@@ -867,3 +867,38 @@
 
 ### Notes
 - Section 7 is complete. The verification middleware remains the primary enforcement mechanism, and checklist prompts now carry deterministic context from tracer state when available.
+
+## Section E1: E2E — Services start and health endpoint returns 200
+
+**Single goal:** Verify that after `docker compose up -d`, backend (and db/frontend) are up and `GET /api/health` returns 200 with expected body.
+
+### Completed work
+- Added backend health API route `GET /api/health` returning `{"status":"ok"}`.
+- Registered health router in FastAPI app bootstrap so the route is available in live Docker runtime.
+- Replaced placeholder API health test with concrete assertion coverage for status code and response payload.
+- Per iteration requirement, performed a full clean application restart before work:
+  - `docker compose down -v --rmi all`
+  - `docker compose build`
+  - `docker compose up -d`
+
+### Validation commands and outcomes
+- `docker compose exec backend uv run pytest tests/api/test_health.py`
+  - Outcome: success (`1 passed in 2.05s`).
+- `curl -s -o /dev/null -w '%{http_code}' http://localhost:8001/api/health`
+  - Outcome: `200`.
+- `curl -s http://localhost:8001/api/health`
+  - Outcome: `{"status":"ok"}`.
+- `docker compose ps`
+  - Outcome: `db`, `backend`, `frontend`, `chrome` all `Up` (`db` healthy).
+
+### Useful logs captured
+- `docker compose logs --tail=80 backend`
+  - Includes successful request log: `"GET /api/health HTTP/1.1" 200 OK`.
+  - Includes temporary reload/import error during file-write race (`ModuleNotFoundError: No module named 'routers.health'`) that self-resolved after file sync/reload; final backend process is healthy and serving 200.
+- `docker compose logs --tail=80 frontend`
+  - Vite dev server ready and serving on container port `5173` (host `5174`).
+- `docker compose logs --tail=80 db`
+  - PostgreSQL initialization completed; database system ready to accept connections.
+
+### Notes
+- Section E1 is complete and passing with live Docker verification.
