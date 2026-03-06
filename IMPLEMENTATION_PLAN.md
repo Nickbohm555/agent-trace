@@ -5,6 +5,8 @@ Refactor existing implementation into a **deep-agent library in LangGraph**. Sec
 
 **Current section to work on:** Section 13.
 
+**Trace Analyzer alignment gaps (Sections 13–15):** The plan below brings the implementation in line with the described Trace Analyzer Skill flow: parallel error analysis as spawned agents, main agent synthesizes findings, and optional aggregate feedback / human-in-the-loop.
+
 ---
 
 ## Section 1: Add deep-agent library dependency
@@ -336,6 +338,91 @@ Refactor existing implementation into a **deep-agent library in LangGraph**. Sec
 | src/frontend/src/App.tsx | No change unless display logic must be fixed. |
 
 **How to test:** Start stack; open UI; trigger tracer run with run_id; verify success/error and harness change/metrics display; run frontend unit tests and typecheck.
+
+**Test results:** (Add when section is complete.)
+- Command and outcome.
+
+---
+
+## Section 13: Parallel error analysis as spawned agents
+
+**Single goal:** Replace parallel error-analysis functions with spawned agents (e.g. deep-agent subagents or invokable agents) so each error is analyzed by an agent, not by the rule-based `_default_error_analyzer`.
+
+**Details:**
+- Today: `collect_error_tasks()` + `analyze_errors_in_parallel()` with `AnalyzerFn` (default: keyword-based). No agent spawning.
+- Target: For each `TraceErrorTask` (or batched subset), spawn an error-analysis agent (e.g. via deep-agent subagent or a small invokable agent) that produces one or more `ErrorAnalysisFinding`; orchestration runs these in parallel and aggregates findings.
+- Keep `ErrorAnalysisFinding` and `TraceErrorTask` schemas; keep injection of `parallel_error_findings` / `parallel_error_count` into tracer state. Only the implementation of “who does the analysis” changes from function to agent(s).
+- Preserve optional fallback to the existing rule-based analyzer for tests or low-cost mode if desired; document the two paths.
+
+**Tech stack and dependencies**
+- Libraries/packages: deep-agent library (for subagent spawning if used); existing `agents.error_analysis_agent`, `agents.tracer_state`, `schemas` for findings/tasks.
+- Tooling: None new.
+
+**Files and purpose**
+
+| File | Purpose |
+|------|--------|
+| src/backend/agents/error_analysis_agent.py | Introduce agent-based analysis path: spawn or invoke error-analysis agents per task (or batch); aggregate findings; keep `collect_error_tasks` and optional rule-based analyzer. |
+| src/backend/agents/deep_agent_tracer.py | Call the new agent-based parallel analysis (orchestration or middleware) instead of `analyze_errors_in_parallel` with default analyzer; state injection unchanged. |
+| src/backend/services/trace_analyzer_service.py | If orchestration runs analysis: use agent-based analysis when loading traces and building initial state. |
+
+**How to test:** Unit test: run agent-based error analysis on a small set of `TraceErrorTask`s; assert returned list of `ErrorAnalysisFinding` and parallel execution. Integration test: tracer run with run_id; assert state contains `parallel_error_findings` produced by agents (not only rule-based path).
+
+**Test results:** (Add when section is complete.)
+- Command and outcome.
+
+---
+
+## Section 14: Main tracer agent performs synthesis of findings and suggestions
+
+**Single goal:** Move harness-change synthesis from rule-based middleware into the main tracer agent so the main agent synthesizes findings and suggestions (e.g. via a synthesis tool or a dedicated synthesis step), instead of `synthesize_harness_changes_from_findings` in middleware.
+
+**Details:**
+- Today: `TracerHarnessSynthesisMiddleware` (or equivalent) calls `synthesize_harness_changes_from_findings(state)` and injects `harness_change_set` / `harness_changes` into state; main agent only consumes them.
+- Target: Main tracer agent performs synthesis. Options: (a) give the agent a tool that takes `parallel_error_findings` and returns a proposed `HarnessChangeSet` (agent calls tool, result written to state); (b) add a dedicated “synthesis” step in the graph where the model receives findings and outputs structured harness changes (e.g. via structured output or a tool). The graph result state still exposes `harness_change_set` and `harness_changes`.
+- Reuse `HarnessChangeSet` and related schemas from `schemas/harness_changes.py`; do not change the API response shape. Remove or bypass the middleware that currently does rule-based synthesis so only the main agent produces the change set.
+
+**Tech stack and dependencies**
+- Libraries/packages: deep-agent library; existing `schemas.harness_changes`, `agents.tracer_state`, `agents.tracer_prompts` (add synthesis instructions if needed).
+- Tooling: None new.
+
+**Files and purpose**
+
+| File | Purpose |
+|------|--------|
+| src/backend/agents/deep_agent_tracer.py | Add synthesis tool or synthesis step for main agent; ensure graph result state includes agent-produced harness_change_set; stop using rule-based synthesis middleware for this outcome. |
+| src/backend/agents/tracer_prompts.py | Add synthesis instructions so the main agent knows when and how to produce harness change suggestions from findings. |
+| src/backend/agents/harness_change_synthesis.py | Keep as reference or for fallback; or remove if fully replaced by agent-driven synthesis. |
+
+**How to test:** Unit test: invoke deep-agent with state containing `parallel_error_findings`; assert result state includes `harness_change_set` produced by the model (tool call or structured output), not by `synthesize_harness_changes_from_findings`. Integration test: full tracer run; assert API response harness_change_set is present and produced by main agent path.
+
+**Test results:** (Add when section is complete.)
+- Command and outcome.
+
+---
+
+## Section 15: Aggregate feedback and human-in-the-loop for harness changes
+
+**Single goal:** Add an explicit “aggregate feedback” step and an optional human-in-the-loop API so harness change suggestions can be reviewed or approved before being applied.
+
+**Details:**
+- Today: Output is a `HarnessChangeSet` (config/prompt/tool suggestions); no aggregation of feedback and no human approval step in the code.
+- Target: (1) Define an aggregation step that combines agent-produced harness suggestions with optional external feedback (e.g. from a prior run or API). (2) Expose an API or flow (e.g. “proposed changes” endpoint + “approve/apply” or “reject”) so a human can review and approve or reject before changes are applied. (3) Apply harness changes only after approval (or when running in auto-apply mode); document the two modes.
+- Do not change the shape of `HarnessChangeSet`; add only aggregation logic and the approval/apply flow.
+
+**Tech stack and dependencies**
+- Libraries/packages: None new beyond existing tracer and harness schemas.
+- Tooling: None new.
+
+**Files and purpose**
+
+| File | Purpose |
+|------|--------|
+| src/backend/services/trace_analyzer_service.py | After graph returns, run aggregation (merge suggestions with any feedback); optionally enqueue or store “proposed changes” for approval. |
+| src/backend/routers/tracer.py | Add or extend endpoints: e.g. GET/POST for proposed harness changes and approve/apply (or reject); or document that approval is out-of-band. |
+| src/backend/schemas (or new) | Optional: feedback payload schema, approval result schema. |
+
+**How to test:** Unit test: aggregation merges agent suggestions with feedback. API test: submit tracer run; fetch proposed changes; call approve (or reject); assert apply only occurs on approve. Manual: run with human-in-the-loop and confirm apply only after approval.
 
 **Test results:** (Add when section is complete.)
 - Command and outcome.
