@@ -2,7 +2,7 @@
 
 Tasks are in **recommended implementation order** (1…n). Each section = **one context window**. Complete one section at a time. Sections 22–23 add UI to run the tracer and view results.
 
-**Current section to work on:** Section 1.
+**Current section to work on:** Section 2.
 
 ---
 
@@ -40,7 +40,7 @@ The following sections implement a **tracing deep-agent** that consumes traces f
 
 **How to test:** Unit tests: mock Langfuse client, assert normalized schema; optional integration test with LANGFUSE_ENABLED and real project if configured.
 
-**Test results:** (Add when section is complete.)
+**Test results:** `docker compose exec backend uv run pytest tests/services/test_langfuse_trace_service.py` → 3 passed (2026-03-06).
 
 ---
 
