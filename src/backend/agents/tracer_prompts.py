@@ -39,6 +39,15 @@ _FIX = dedent(
     """
 ).strip()
 
+_TESTABLE_CODE = dedent(
+    """
+    Testable Code expectations:
+    - Your work is evaluated by programmatic tests, so ensure behavior is verifiable by automated test commands.
+    - Follow file paths from the task specification exactly; do not rename files or relocate requested changes.
+    - Treat edge cases as first-class requirements, not optional follow-ups to the happy path.
+    """
+).strip()
+
 
 def build_tracer_system_prompt() -> str:
     """Return the tracer's plan-build-verify-fix system prompt."""
@@ -47,6 +56,7 @@ def build_tracer_system_prompt() -> str:
             "You are the tracing deep-agent for harness engineering improvements.",
             _PLANNING_AND_DISCOVERY,
             _BUILD,
+            _TESTABLE_CODE,
             _VERIFY,
             _FIX,
         ]

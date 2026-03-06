@@ -384,3 +384,46 @@
 **Operational note:**
 - Changed container: `backend`.
 - Restarted backend (`docker compose restart backend`) after implementation and re-checked `docker compose ps` plus backend/frontend/db logs.
+
+## Section 11: Teaching testable code in tracer prompt
+
+**Depends on:** Section 10 (existing system prompt to extend).
+
+**Single goal:** Add prompt instructions that work will be measured against programmatic tests, file paths must be exact, and edge cases matter (per article).
+
+**Deep-agent capability:** System prompts — testable code, exact file paths, edge cases (not only happy path).
+
+**Details implemented:**
+- Extended `src/backend/agents/tracer_prompts.py` with a focused `Testable Code expectations` fragment instead of duplicating the full prompt.
+- Added explicit guidance that outcomes are measured by programmatic tests.
+- Added explicit guidance to follow task-spec file paths exactly and avoid relocating requested changes.
+- Strengthened edge-case requirement by stating edge cases are first-class requirements.
+- Added prompt tests in `src/backend/tests/agents/test_tracer_prompts.py` to assert all three instructions are present.
+
+**Test results:**
+- `docker compose exec backend uv run pytest tests/agents/test_tracer_prompts.py`
+- Result: `3 passed in 0.01s` on 2026-03-06.
+
+**Useful logs (2026-03-06):**
+- Full clean restart completed before implementation:
+  - `docker compose down -v --rmi all`
+  - `docker compose build`
+  - `docker compose up -d`
+- `docker compose ps` after restart:
+  - `backend` up on `0.0.0.0:8001->8000/tcp`
+  - `frontend` up on `0.0.0.0:5174->5173/tcp`
+  - `db` healthy on `0.0.0.0:5433->5432/tcp`
+- Backend logs:
+  - `INFO  [alembic.runtime.migration] Running upgrade  -> 20260306_01, add trace storage tables`
+  - `INFO:     Uvicorn running on http://0.0.0.0:8000`
+  - `INFO:     Application startup complete.`
+  - `WARNING:  WatchFiles detected changes in 'agents/tracer_prompts.py'. Reloading...` (expected)
+- Frontend logs:
+  - `VITE v7.3.1 ready in 1229 ms`
+  - `Local: http://localhost:5173/`
+- DB logs:
+  - `database system is ready to accept connections`
+
+**Operational note:**
+- Changed container: `backend`.
+- Restarted backend with `docker compose restart backend` after implementation and re-checked backend/frontend/db logs.

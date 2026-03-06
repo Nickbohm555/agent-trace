@@ -18,3 +18,11 @@ def test_build_tracer_system_prompt_requires_spec_based_verification() -> None:
     assert "Validate results against what was asked in the task specification." in prompt
     assert "Compare output to the requested behavior" in prompt
     assert "Never treat \"code looks correct\" as sufficient verification." in prompt
+
+
+def test_build_tracer_system_prompt_enforces_testable_code_and_exact_paths() -> None:
+    prompt = build_tracer_system_prompt()
+
+    assert "evaluated by programmatic tests" in prompt
+    assert "Follow file paths from the task specification exactly" in prompt
+    assert "edge cases as first-class requirements" in prompt

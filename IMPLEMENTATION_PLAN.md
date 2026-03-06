@@ -2,7 +2,7 @@
 
 Tasks are in **recommended implementation order** (1…n). Each section = **one context window**. Complete one section at a time. Sections 22–23 add UI to run the tracer and view results.
 
-**Current section to work on:** Section 11.
+**Current section to work on:** Section 12.
 
 ---
 
@@ -318,7 +318,7 @@ The following sections implement a **tracing deep-agent** that consumes traces f
 
 **How to test:** Assert prompt contains required phases and verification/testing language; optional: run graph and check that agent behavior aligns (manual or snapshot).
 
-**Test results:** (Add when section is complete.)
+**Test results:** `docker compose exec backend uv run pytest tests/agents/test_tracer_prompts.py` → 3 passed (2026-03-06).
 
 ---
 
