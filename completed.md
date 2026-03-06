@@ -516,3 +516,56 @@
 **Operational note:**
 - Changed container: `backend` only (Python code/tests).
 - Restarted backend with `docker compose restart backend` and verified backend/frontend/db logs plus readiness endpoint.
+
+## Section 14: Time budget injection
+
+**Depends on:** Section 4 (graph to inject into state).
+
+**Single goal:** Inject time-remaining (or step-remaining) warnings into the tracer’s context so the agent shifts to verification and submission under limits.
+
+**Deep-agent capability:** Context management / middleware — time budget injection (nudge toward verification and submit).
+
+**Details implemented:**
+- Extended `src/backend/agents/tracer_state.py` with time-budget state fields: `run_started_at_epoch_seconds`, `max_runtime_seconds`, `max_steps`, `time_budget_notice_interval_steps`, `agent_step_count`, and `time_budget_last_notice_step`.
+- Added Section 14 middleware in `src/backend/agents/tracer_middleware.py`:
+  - `apply_time_budget_injection(...)` to increment step count, initialize run start time, and periodically decide whether to inject a budget warning.
+  - `build_time_budget_message(...)` to generate a concise runtime/step-remaining message that nudges verification and submission.
+  - Configured trigger conditions for periodic notices (`time_budget_notice_interval_steps`, default `3`) plus near-limit warnings (`<=2` steps remaining or `<=120s` runtime remaining).
+  - Added structured logging when budget context is injected.
+- Wired time-budget injection into `src/backend/agents/langgraph_agent.py` before model invocation:
+  - Agent now evaluates budget context each turn and appends a `SystemMessage` budget warning when applicable.
+  - Budget warning is persisted to graph state/messages so the run transcript captures visibility.
+  - Agent step/time state is persisted on each turn.
+- Added tests:
+  - `src/backend/tests/agents/test_tracer_middleware.py` now validates direct short-budget injection and runtime/step formatting.
+  - `src/backend/tests/agents/test_langgraph_agent.py` now validates graph-level injection with `max_steps=1` and confirms message presence in model-visible state and final graph state.
+
+**Test results:**
+- `docker compose exec backend uv run pytest tests/agents/test_tracer_middleware.py tests/agents/test_langgraph_agent.py`
+- Result: `16 passed in 1.10s` on 2026-03-06.
+
+**Useful logs (2026-03-06):**
+- Clean start performed before implementation:
+  - `docker compose down -v --rmi all`
+  - `docker compose build`
+  - `docker compose up -d`
+- Post-restart container state (`docker compose ps`):
+  - `backend` up on `0.0.0.0:8001->8000/tcp`
+  - `frontend` up on `0.0.0.0:5174->5173/tcp`
+  - `db` healthy on `0.0.0.0:5433->5432/tcp`
+- Backend logs (`docker compose logs --tail=200 backend`):
+  - `INFO  [alembic.runtime.migration] Running upgrade  -> 20260306_01, add trace storage tables`
+  - `INFO:     Uvicorn running on http://0.0.0.0:8000`
+  - `INFO:     Application startup complete.`
+  - `WARNING:  WatchFiles detected changes ... Reloading...` (expected during iterative edits)
+- Frontend logs (`docker compose logs --tail=60 frontend`):
+  - `VITE v7.3.1 ready`
+  - `Local: http://localhost:5173/`
+- DB logs (`docker compose logs --tail=80 db`):
+  - `database system is ready to accept connections`
+- Backend readiness check:
+  - `curl http://localhost:8001/docs` returned HTTP `200`.
+
+**Operational note:**
+- Changed container: `backend`.
+- Restarted changed service with `docker compose restart backend` and reviewed backend/frontend/db logs after restart.

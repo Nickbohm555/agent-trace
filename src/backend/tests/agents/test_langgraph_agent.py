@@ -354,3 +354,34 @@ def test_build_tracer_graph_injects_local_context_on_first_turn(
     assert "Sandbox local context:" in str(result["local_context"])
 
     sandbox_service.teardown_sandbox(session)
+
+
+def test_build_tracer_graph_injects_time_budget_message_with_short_budget() -> None:
+    saw_time_budget_context = False
+
+    def model_invoke(state: dict[str, object], _: str, __: str) -> AIMessage:
+        nonlocal saw_time_budget_context
+        saw_time_budget_context = any(
+            isinstance(message, SystemMessage) and "Time budget status:" in str(message.content)
+            for message in state["messages"]
+        )
+        return AIMessage(content="Budget acknowledged")
+
+    graph = build_tracer_graph(model_invoke=model_invoke)
+    result = graph.invoke(
+        {
+            "messages": [],
+            "run_id": "run-time-budget",
+            "current_trace_summary": None,
+            "max_steps": 1,
+            "pre_completion_verified": True,
+        }
+    )
+
+    assert saw_time_budget_context is True
+    assert any(
+        isinstance(message, SystemMessage) and "Time budget status:" in str(message.content)
+        for message in result["messages"]
+    )
+    assert result["agent_step_count"] == 1
+    assert result["messages"][-1].content == "Budget acknowledged"

@@ -2,7 +2,7 @@
 
 Tasks are in **recommended implementation order** (1…n). Each section = **one context window**. Complete one section at a time. Sections 22–23 add UI to run the tracer and view results.
 
-**Current section to work on:** Section 14.
+**Current section to work on:** Section 15.
 
 ---
 
@@ -346,7 +346,7 @@ The following sections implement a **tracing deep-agent** that consumes traces f
 
 **How to test:** Assert prompt text contains file-path exactness, programmatic tests, edge cases.
 
-**Test results:** `docker compose exec backend uv run pytest tests/agents/test_langgraph_agent.py tests/agents/test_tracer_middleware.py` → 13 passed (2026-03-06).
+**Test results:** `docker compose exec backend uv run pytest tests/agents/test_tracer_prompts.py` → 3 passed (2026-03-06).
 
 ---
 
@@ -375,7 +375,7 @@ The following sections implement a **tracing deep-agent** that consumes traces f
 
 **How to test:** Unit test: given a sandbox path, assert context contains expected keys (cwd, python_path, etc.). Integration: first turn has context in state.
 
-**Test results:** (Add when section is complete.)
+**Test results:** `docker compose exec backend uv run pytest tests/agents/test_tracer_context.py tests/agents/test_langgraph_agent.py` → 11 passed (2026-03-06).
 
 ---
 
@@ -405,7 +405,7 @@ The following sections implement a **tracing deep-agent** that consumes traces f
 
 **How to test:** Run graph; when agent tries to end, assert verification step runs (e.g. one more message or tool call).
 
-**Test results:** (Add when section is complete.)
+**Test results:** `docker compose exec backend uv run pytest tests/agents/test_tracer_middleware.py tests/agents/test_langgraph_agent.py` → 16 passed (2026-03-06).
 
 ---
 
@@ -434,7 +434,7 @@ The following sections implement a **tracing deep-agent** that consumes traces f
 
 **How to test:** Run with short budget; assert state or messages contain time-remaining text at least once.
 
-**Test results:** (Add when section is complete.)
+**Test results:** `docker compose exec backend uv run pytest tests/agents/test_tracer_middleware.py tests/agents/test_langgraph_agent.py` → 16 passed (2026-03-06).
 
 ---
 

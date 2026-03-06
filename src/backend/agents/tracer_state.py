@@ -21,3 +21,9 @@ class TracerState(TypedDict, total=False):
     reasoning_level: ReasoningLevel
     reasoning_phase_levels: dict[ReasoningPhase, ReasoningLevel]
     pre_completion_verified: bool
+    run_started_at_epoch_seconds: float
+    max_runtime_seconds: int
+    max_steps: int
+    time_budget_notice_interval_steps: int
+    agent_step_count: int
+    time_budget_last_notice_step: int

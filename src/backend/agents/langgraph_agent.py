@@ -18,6 +18,7 @@ from agents.tracer_config import (
 )
 from agents.tracer_context import build_local_context_message, contains_local_context_message
 from agents.tracer_middleware import (
+    apply_time_budget_injection,
     pre_completion_check_node,
     should_inject_pre_completion_checklist,
 )
@@ -140,12 +141,26 @@ def build_tracer_graph(
             )
             contextual_state = _inject_local_context(state, sandbox_service=sandbox_service)
             prompted_state = _inject_system_prompt(contextual_state, selected_system_prompt)
+            budgeted_state, time_budget_message = apply_time_budget_injection(prompted_state)
+            invoke_state = budgeted_state
+            if time_budget_message is not None:
+                invoke_state = dict(budgeted_state)
+                invoke_state["messages"] = [*list(budgeted_state.get("messages", [])), time_budget_message]
             logger.info(
                 "Executing tracer agent with reasoning configuration",
                 extra={"phase": phase, "reasoning_level": level, "run_id": state.get("run_id")},
             )
-            response = selected_model_invoke(prompted_state, phase, level)
-            updates: dict[str, Any] = {"messages": [response]}
+            response = selected_model_invoke(invoke_state, phase, level)
+            output_messages: list[AnyMessage] = [response]
+            if time_budget_message is not None:
+                output_messages = [time_budget_message, response]
+            updates: dict[str, Any] = {
+                "messages": output_messages,
+                "agent_step_count": budgeted_state["agent_step_count"],
+                "run_started_at_epoch_seconds": budgeted_state["run_started_at_epoch_seconds"],
+            }
+            if "time_budget_last_notice_step" in budgeted_state:
+                updates["time_budget_last_notice_step"] = budgeted_state["time_budget_last_notice_step"]
             if contextual_state.get("local_context") and not state.get("local_context"):
                 updates["local_context"] = contextual_state["local_context"]
             return updates
