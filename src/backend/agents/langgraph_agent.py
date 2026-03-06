@@ -19,7 +19,7 @@ from agents.tracer_config import (
 from agents.tracer_state import TracerState
 from services.sandbox_service import SandboxService
 from services.trace_storage_service import TraceStorageService
-from tools.codebase_tools import build_list_directory_tool, build_read_file_tool
+from tools.codebase_tools import build_edit_file_tool, build_list_directory_tool, build_read_file_tool
 from tools.trace_tools import build_read_trace_tool
 
 logger = logging.getLogger(__name__)
@@ -68,6 +68,7 @@ def build_tracer_graph(
     if sandbox_service is not None:
         resolved_tools.append(build_list_directory_tool(sandbox_service))
         resolved_tools.append(build_read_file_tool(sandbox_service))
+        resolved_tools.append(build_edit_file_tool(sandbox_service))
 
     if agent_node is None:
         selected_reasoning_config = reasoning_config or TracerReasoningConfig()

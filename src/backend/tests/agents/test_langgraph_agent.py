@@ -167,6 +167,22 @@ def test_build_tracer_graph_executes_codebase_tools_with_sandbox(
         if call_count == 2:
             assert isinstance(state["messages"][-1], ToolMessage)
             return AIMessage(
+                content="Edit app file",
+                tool_calls=[
+                    {
+                        "name": "edit_file",
+                        "args": {
+                            "sandbox_path": session.sandbox_path,
+                            "path": "src/app.py",
+                            "content": "print('updated sandbox')\n",
+                        },
+                        "id": "tc-edit",
+                    }
+                ],
+            )
+        if call_count == 3:
+            assert isinstance(state["messages"][-1], ToolMessage)
+            return AIMessage(
                 content="Read app file",
                 tool_calls=[
                     {
@@ -183,12 +199,14 @@ def test_build_tracer_graph_executes_codebase_tools_with_sandbox(
     graph = build_tracer_graph(model_invoke=model_invoke, sandbox_service=sandbox_service)
     result = graph.invoke({"messages": [], "run_id": "run-codebase", "current_trace_summary": None})
 
-    assert call_count == 3
-    assert len(result["messages"]) == 5
+    assert call_count == 4
+    assert len(result["messages"]) == 7
     assert isinstance(result["messages"][1], ToolMessage)
     assert "README.md" in str(result["messages"][1].content)
     assert isinstance(result["messages"][3], ToolMessage)
-    assert "print('sandbox')" in str(result["messages"][3].content)
-    assert result["messages"][4].content == "Codebase inspected"
+    assert "updated" in str(result["messages"][3].content)
+    assert isinstance(result["messages"][5], ToolMessage)
+    assert "print('updated sandbox')" in str(result["messages"][5].content)
+    assert result["messages"][6].content == "Codebase inspected"
 
     sandbox_service.teardown_sandbox(session)

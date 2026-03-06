@@ -179,6 +179,16 @@ class SandboxService:
             },
         )
 
+    def write_file_by_sandbox_path(
+        self,
+        *,
+        sandbox_path: str,
+        path: str,
+        content: str,
+    ) -> None:
+        session = self._session_from_sandbox_path(sandbox_path)
+        self.write_file(session, path, content)
+
     def apply_patch(self, session: SandboxSession, path: str, content: str) -> None:
         """Simple patch primitive: full file replacement at sandbox-relative path."""
         self.write_file(session=session, path=path, content=content)

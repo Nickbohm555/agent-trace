@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class CodebaseTools:
-    """Sandbox-backed filesystem tools for directory listing and file reads."""
+    """Sandbox-backed filesystem tools for listing, reading, and editing files."""
 
     sandbox_service: SandboxService
 
@@ -49,6 +49,23 @@ class CodebaseTools:
             "byte_count": len(content.encode("utf-8")),
         }
 
+    def edit_file(self, *, sandbox_path: str, path: str, content: str) -> dict[str, Any]:
+        self.sandbox_service.write_file_by_sandbox_path(
+            sandbox_path=sandbox_path,
+            path=path,
+            content=content,
+        )
+        logger.info(
+            "edit_file tool completed",
+            extra={"sandbox_path": sandbox_path, "path": path, "byte_count": len(content.encode("utf-8"))},
+        )
+        return {
+            "sandbox_path": sandbox_path,
+            "path": path,
+            "byte_count": len(content.encode("utf-8")),
+            "status": "updated",
+        }
+
 
 def build_list_directory_tool(sandbox_service: SandboxService) -> StructuredTool:
     adapter = CodebaseTools(sandbox_service=sandbox_service)
@@ -65,4 +82,13 @@ def build_read_file_tool(sandbox_service: SandboxService) -> StructuredTool:
         func=adapter.read_file,
         name="read_file",
         description="Read a file from the active sandbox repo using a sandbox-relative path.",
+    )
+
+
+def build_edit_file_tool(sandbox_service: SandboxService) -> StructuredTool:
+    adapter = CodebaseTools(sandbox_service=sandbox_service)
+    return StructuredTool.from_function(
+        func=adapter.edit_file,
+        name="edit_file",
+        description="Create or replace a file in the active sandbox repo using a sandbox-relative path.",
     )

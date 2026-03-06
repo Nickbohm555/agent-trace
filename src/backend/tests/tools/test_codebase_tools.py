@@ -6,7 +6,7 @@ import pytest
 
 from schemas.sandbox import SandboxCreateRequest
 from services.sandbox_service import SandboxService
-from tools.codebase_tools import build_list_directory_tool, build_read_file_tool
+from tools.codebase_tools import build_edit_file_tool, build_list_directory_tool, build_read_file_tool
 
 
 def _mock_clone_to_local_repo(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -49,5 +49,29 @@ def test_read_file_tool_returns_content_from_sandbox_repo(monkeypatch: pytest.Mo
     assert result["path"] == "src/app.py"
     assert "print('ok')" in result["content"]
     assert result["byte_count"] > 0
+
+    service.teardown_sandbox(session)
+
+
+def test_edit_file_tool_updates_content_in_sandbox_repo(monkeypatch: pytest.MonkeyPatch) -> None:
+    _mock_clone_to_local_repo(monkeypatch)
+    service = SandboxService(default_target_repo_url="https://example.com/default.git")
+    session = service.create_sandbox(SandboxCreateRequest())
+
+    edit_tool = build_edit_file_tool(service)
+    edit_result = edit_tool.invoke(
+        {
+            "sandbox_path": session.sandbox_path,
+            "path": "src/app.py",
+            "content": "print('edited')\n",
+        }
+    )
+
+    read_tool = build_read_file_tool(service)
+    read_result = read_tool.invoke({"sandbox_path": session.sandbox_path, "path": "src/app.py"})
+
+    assert edit_result["status"] == "updated"
+    assert edit_result["path"] == "src/app.py"
+    assert "print('edited')" in read_result["content"]
 
     service.teardown_sandbox(session)

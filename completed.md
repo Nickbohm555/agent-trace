@@ -261,3 +261,43 @@
 **Operational note:**
 - Changed container: `backend`.
 - Per iteration policy, restarted `backend` (`docker compose restart backend`) and re-checked backend/frontend/db logs.
+
+## Section 8: Tracer tool – edit file in sandbox
+
+**Depends on:** Section 3 (sandbox), Section 4 (graph). Same module as Section 7 for codebase tools.
+
+**Single goal:** Add a tool for the tracer to apply edits (patch or full replace) to files in the sandboxed repo.
+
+**Deep-agent capability:** Virtual filesystem — edit_file / write_file (all writes scoped to sandbox).
+
+**Details implemented:**
+- Added `edit_file` in `src/backend/tools/codebase_tools.py` as a structured tool (`edit_file(sandbox_path, path, content)`) backed by sandbox write operations.
+- Added sandbox adapter method `write_file_by_sandbox_path(...)` in `src/backend/services/sandbox_service.py` so tool calls can write via active sandbox root safely.
+- Bound `edit_file` into tracer graph tool registration in `src/backend/agents/langgraph_agent.py` alongside `list_directory` and `read_file`.
+- Updated tool exports in `src/backend/tools/__init__.py` to include `build_edit_file_tool`.
+- Added unit coverage in `src/backend/tests/tools/test_codebase_tools.py` to assert `edit_file` updates file content and read-back reflects the edit.
+- Extended integration coverage in `src/backend/tests/agents/test_langgraph_agent.py` so the graph loop executes `list_directory -> edit_file -> read_file` and verifies updated content.
+
+**Test results:**
+- `docker compose exec backend uv run pytest tests/tools/test_codebase_tools.py tests/agents/test_langgraph_agent.py`
+- Result: `9 passed in 1.02s` on 2026-03-06.
+
+**Useful logs (2026-03-06):**
+- `docker compose ps` after restart:
+  - `backend` up on `0.0.0.0:8001->8000/tcp`
+  - `frontend` up on `0.0.0.0:5174->5173/tcp`
+  - `db` healthy on `0.0.0.0:5433->5432/tcp`
+- Backend logs:
+  - `INFO: Uvicorn running on http://0.0.0.0:8000`
+  - `INFO: Application startup complete.`
+  - `WARNING: WatchFiles detected changes ... Reloading...` (expected during iteration)
+- Frontend logs:
+  - `VITE v7.3.1 ready in 234 ms`
+  - `Local: http://localhost:5173/`
+- DB logs:
+  - `database system is ready to accept connections`
+
+**Operational note:**
+- Changed container: `backend`.
+- Restarted backend with `docker compose restart backend` and verified logs for `backend`, `frontend`, and `db`.
+- Initial parallel attempt restarted backend while tests were running and returned exit code `137`; tests were re-run cleanly and passed.
