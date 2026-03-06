@@ -2,7 +2,7 @@
 
 Tasks are in **recommended implementation order** (1…n). Each section = **one context window**. Complete one section at a time. Sections 22–23 add UI to run the tracer and view results.
 
-**Current section to work on:** Section 3.
+**Current section to work on:** Section 4.
 
 ---
 
@@ -108,7 +108,7 @@ The following sections implement a **tracing deep-agent** that consumes traces f
 
 **How to test:** Unit test: create sandbox, write file, run `echo`, read file, teardown. Assert sandbox creation uses `TRACER_DEFAULT_TARGET_REPO_URL` when no URL is passed. No network or host filesystem outside sandbox in test.
 
-**Test results:** (Add when section is complete.)
+**Test results:** `docker compose exec backend uv run pytest tests/services/test_sandbox_service.py` → 3 passed (2026-03-06).
 
 ---
 

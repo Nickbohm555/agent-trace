@@ -66,3 +66,38 @@
 
 **Operational note:**
 - Earlier startup failures in this loop showed `database "agent_trace" does not exist`; this was addressed by making Alembic use the container `DATABASE_URL` from environment so startup and migrations align with configured DB name.
+
+## Section 3: Sandbox runtime for target repo
+
+**Depends on:** None.
+
+**Single goal:** Provide an isolated environment (sandbox) where the target agent’s repo is cloned and all tracer-driven edits and commands run. When no URL is supplied by the caller, use the configured default.
+
+**Deep-agent capability:** Code execution environment; virtual filesystem backend (sandbox as pluggable backend for list/read/edit/execute).
+
+**Details implemented:**
+- Added `src/backend/schemas/sandbox.py` with typed schemas for sandbox creation/session metadata and command request/result payloads.
+- Added `src/backend/services/sandbox_service.py` implementing disposable sandbox lifecycle with `git clone`, sandbox-scoped command execution, sandbox-relative read/write operations, patch-by-replace helper, path-escape protection, and teardown.
+- Implemented default target repo fallback from `TRACER_DEFAULT_TARGET_REPO_URL` when `target_repo_url` is omitted.
+- Added structured logging around sandbox create/clone/command/read/write/teardown for operational visibility.
+- Added `src/backend/tests/services/test_sandbox_service.py` covering default URL fallback, write/read/command flow, path containment enforcement, and teardown cleanup with mocked cloning (no network dependency).
+- Verified `.env.example` already contains `TRACER_DEFAULT_TARGET_REPO_URL=https://github.com/Nickbohm555/agent-search`.
+
+**Test results:**
+- `docker compose exec backend uv run pytest tests/services/test_sandbox_service.py`
+- Result: `3 passed in 0.12s` on 2026-03-06.
+
+**Useful logs (2026-03-06):**
+- Backend:
+  - `INFO  [alembic.runtime.migration] Running upgrade  -> 20260306_01, add trace storage tables`
+  - `INFO:     Uvicorn running on http://0.0.0.0:8000`
+  - `WARNING:  WatchFiles detected changes in 'tests/services/test_sandbox_service.py', 'services/sandbox_service.py', 'schemas/sandbox.py'. Reloading...`
+  - `INFO:     Application startup complete.`
+- Frontend:
+  - `VITE v7.3.1  ready in 164 ms`
+  - `Local: http://localhost:5173/`
+- DB:
+  - `database system is ready to accept connections`
+
+**Operational note:**
+- Changed container: `backend` (code and tests only). Restarted `backend` and verified `backend`, `frontend`, and `db` logs after restart.
