@@ -189,6 +189,24 @@ class SandboxService:
         session = self._session_from_sandbox_path(sandbox_path)
         self.write_file(session, path, content)
 
+    def run_command_by_sandbox_path(
+        self,
+        *,
+        sandbox_path: str,
+        command: list[str],
+        timeout_seconds: int = 120,
+        cwd: str | None = None,
+    ) -> SandboxCommandResult:
+        session = self._session_from_sandbox_path(sandbox_path)
+        return self.run_command(
+            session,
+            SandboxCommandRequest(
+                command=command,
+                timeout_seconds=timeout_seconds,
+                cwd=cwd,
+            ),
+        )
+
     def apply_patch(self, session: SandboxSession, path: str, content: str) -> None:
         """Simple patch primitive: full file replacement at sandbox-relative path."""
         self.write_file(session=session, path=path, content=content)

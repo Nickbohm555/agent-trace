@@ -301,3 +301,46 @@
 - Changed container: `backend`.
 - Restarted backend with `docker compose restart backend` and verified logs for `backend`, `frontend`, and `db`.
 - Initial parallel attempt restarted backend while tests were running and returned exit code `137`; tests were re-run cleanly and passed.
+
+## Section 9: Tracer tool – run command in sandbox
+
+**Depends on:** Section 3 (sandbox), Section 4 (graph).
+
+**Single goal:** Add a tool for the tracer to run shell commands (e.g. tests, linters) inside the sandbox.
+
+**Deep-agent capability:** Code execution — execute tool (run command in isolated sandbox; stdout/stderr, exit code, timeout).
+
+**Details implemented:**
+- Added `src/backend/tools/sandbox_tools.py` with `run_command(sandbox_path, command, timeout_seconds, cwd)` as a structured tool.
+- Added `SandboxService.run_command_by_sandbox_path(...)` in `src/backend/services/sandbox_service.py` so command execution is resolved and executed from sandbox context only.
+- Bound `run_command` to the tracer graph in `src/backend/agents/langgraph_agent.py` when `sandbox_service` is provided.
+- Exported the new tool builder from `src/backend/tools/__init__.py`.
+- Added unit coverage in `src/backend/tests/tools/test_sandbox_tools.py` for `echo` execution and stdout/exit-code assertions.
+- Added graph integration coverage in `src/backend/tests/agents/test_langgraph_agent.py` so the agent invokes `run_command` and validates tool output from `ToolMessage`.
+- Added structured logs in the tool for visibility (`sandbox_path`, command, cwd, timeout, exit_code, stdout/stderr sizes).
+
+**Test results:**
+- `docker compose exec backend uv run pytest tests/tools/test_sandbox_tools.py tests/agents/test_langgraph_agent.py`
+- Result: `8 passed in 1.60s` on 2026-03-06.
+
+**Useful logs (2026-03-06):**
+- Fresh full restart executed before implementation:
+  - `docker compose down -v --rmi all`
+  - `docker compose build`
+  - `docker compose up -d`
+- Backend logs:
+  - `INFO  [alembic.runtime.migration] Running upgrade  -> 20260306_01, add trace storage tables`
+  - `INFO:     Uvicorn running on http://0.0.0.0:8000`
+  - `INFO:     Application startup complete.`
+  - `WARNING:  WatchFiles detected changes in 'tools/sandbox_tools.py'. Reloading...` (expected during iteration)
+- Frontend logs:
+  - `VITE v7.3.1  ready in 6213 ms`
+  - `Local: http://localhost:5173/`
+- DB logs:
+  - `database system is ready to accept connections`
+- Readiness check:
+  - `curl http://localhost:8001/docs` returned `200`.
+
+**Operational note:**
+- Changed container: `backend`.
+- Restarted backend after implementation (`docker compose restart backend`) and verified `docker compose ps` plus logs for `backend`, `frontend`, `db`, and `chrome`.

@@ -210,3 +210,47 @@ def test_build_tracer_graph_executes_codebase_tools_with_sandbox(
     assert result["messages"][6].content == "Codebase inspected"
 
     sandbox_service.teardown_sandbox(session)
+
+
+def test_build_tracer_graph_executes_run_command_tool_with_sandbox(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _mock_clone_to_local_repo(monkeypatch)
+    sandbox_service = SandboxService(default_target_repo_url="https://example.com/default.git")
+    session = sandbox_service.create_sandbox(SandboxCreateRequest())
+
+    call_count = 0
+
+    def model_invoke(state: dict[str, object], _: str, __: str) -> AIMessage:
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            return AIMessage(
+                content="Run command in sandbox",
+                tool_calls=[
+                    {
+                        "name": "run_command",
+                        "args": {
+                            "sandbox_path": session.sandbox_path,
+                            "command": ["sh", "-c", "echo graph-run-command"],
+                            "timeout_seconds": 10,
+                        },
+                        "id": "tc-run-command",
+                    }
+                ],
+            )
+
+        assert isinstance(state["messages"][-1], ToolMessage)
+        return AIMessage(content="Command verified")
+
+    graph = build_tracer_graph(model_invoke=model_invoke, sandbox_service=sandbox_service)
+    result = graph.invoke({"messages": [], "run_id": "run-command", "current_trace_summary": None})
+
+    assert call_count == 2
+    assert len(result["messages"]) == 3
+    assert isinstance(result["messages"][1], ToolMessage)
+    assert "graph-run-command" in str(result["messages"][1].content)
+    assert '"exit_code": 0' in str(result["messages"][1].content)
+    assert result["messages"][2].content == "Command verified"
+
+    sandbox_service.teardown_sandbox(session)
