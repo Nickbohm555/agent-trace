@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Mapping, get_type_hints
+from collections.abc import Mapping
+from typing import Any, get_type_hints
 
 from deepagents import create_deep_agent
 from langchain.agents.middleware import AgentMiddleware
@@ -20,6 +21,7 @@ from agents.tracer_config import (
 )
 from agents.tracer_context import build_local_context_message, contains_local_context_message
 from agents.error_analysis_agent import analyze_errors_in_parallel, collect_error_tasks
+from agents.harness_change_synthesis import synthesize_harness_changes_from_findings
 from agents.tracer_middleware import (
     apply_loop_detection_injection,
     apply_time_budget_injection,
@@ -241,6 +243,36 @@ class TracerReasoningBudgetMiddleware(AgentMiddleware[TracerState, Any, Any]):
         return resolved_levels
 
 
+class TracerHarnessSynthesisMiddleware(AgentMiddleware[TracerState, Any, Any]):
+    """Synthesize structured harness changes from parallel error findings."""
+
+    def before_agent(self, state: TracerState, runtime: Any) -> dict[str, Any] | None:
+        del runtime
+        existing_change_set = state.get("harness_change_set")
+        if isinstance(existing_change_set, Mapping) and existing_change_set:
+            return None
+        if state.get("harness_changes"):
+            return None
+
+        synthesized_change_set = synthesize_harness_changes_from_findings(state)
+        if synthesized_change_set is None:
+            return None
+
+        dumped_change_set = synthesized_change_set.model_dump(mode="json")
+        logger.info(
+            "Injected synthesized harness changes into deep-agent state",
+            extra={
+                "run_id": state.get("run_id"),
+                "change_count": len(dumped_change_set.get("harness_changes", [])),
+                "trace_id_count": len(dumped_change_set.get("trace_ids", [])),
+            },
+        )
+        return {
+            "harness_change_set": dumped_change_set,
+            "harness_changes": dumped_change_set.get("harness_changes", []),
+        }
+
+
 class TracerTimeBudgetMiddleware(AgentMiddleware[TracerState, Any, Any]):
     """Apply tracer time/step budget updates and inject warning context when needed."""
 
@@ -367,6 +399,7 @@ def build_deep_agent_tracer(
         middleware=[
             TracerStateSchemaMiddleware(),
             TracerParallelErrorAnalysisMiddleware(trace_storage_service=trace_storage_service),
+            TracerHarnessSynthesisMiddleware(),
             TracerLocalContextMiddleware(sandbox_service=sandbox_service),
             TracerSandboxScopeMiddleware(),
             TracerTimeBudgetMiddleware(),

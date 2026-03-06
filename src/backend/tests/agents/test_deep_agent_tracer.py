@@ -273,6 +273,65 @@ def test_build_deep_agent_tracer_injects_parallel_error_findings_from_trace_stor
     assert result["parallel_error_findings"][0]["suggested_fix_category"] == "timeout_or_retry_policy"
 
 
+def test_build_deep_agent_tracer_synthesizes_harness_change_set_from_findings(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_bind_tools(monkeypatch)
+    graph = build_deep_agent_tracer(
+        model=FakeMessagesListChatModel(
+            responses=[AIMessage(content="Synthesis captured.")],
+        )
+    )
+
+    result = graph.invoke(
+        {
+            "messages": [HumanMessage(content="Synthesize harness changes")],
+            "run_id": "run-harness-synthesis",
+            "pre_completion_verified": True,
+            "parallel_analysis_completed": True,
+            "parallel_error_findings": [
+                {
+                    "trace_id": "trace-err-1",
+                    "suggested_fix_category": "timeout_or_retry_policy",
+                }
+            ],
+        }
+    )
+
+    assert result["harness_change_set"]["run_id"] == "run-harness-synthesis"
+    assert result["harness_change_set"]["trace_ids"] == ["trace-err-1"]
+    assert result["harness_change_set"]["harness_changes"][0]["category"] == "config"
+    assert (
+        result["harness_change_set"]["harness_changes"][0]["config_change"]["key"]
+        == "sandbox.command_timeout_seconds"
+    )
+    assert result["harness_changes"] == result["harness_change_set"]["harness_changes"]
+
+
+def test_build_deep_agent_tracer_skips_harness_change_synthesis_without_findings(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_bind_tools(monkeypatch)
+    graph = build_deep_agent_tracer(
+        model=FakeMessagesListChatModel(
+            responses=[AIMessage(content="No synthesis required.")],
+        )
+    )
+
+    result = graph.invoke(
+        {
+            "messages": [HumanMessage(content="No findings to synthesize")],
+            "run_id": "run-no-harness-synthesis",
+            "pre_completion_verified": True,
+            "parallel_analysis_completed": True,
+            "parallel_error_findings": [],
+        }
+    )
+
+    assert "harness_change_set" not in result
+    assert "harness_changes" not in result
+
+
 def test_build_deep_agent_tracer_uses_tracer_system_prompt(monkeypatch: pytest.MonkeyPatch) -> None:
     captured: dict[str, object] = {}
 

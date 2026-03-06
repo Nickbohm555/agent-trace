@@ -256,3 +256,50 @@
 
 ### Notes
 - Section 7 completed in deep-agent middleware without changing harness synthesis schema/logic.
+
+## Section 8: Migrate harness change synthesis to deep-agent output
+
+**Single goal:** Produce structured HarnessChangeSet from parallel_error_findings in the deep-agent path so the tracer returns harness change suggestions.
+
+**Details:**
+- After parallel findings are available, convert them to HarnessChangeSet using existing logic (e.g. _synthesize_harness_changes from langgraph_agent or equivalent); emit harness_change_set and harness_changes in graph result state.
+- Can be implemented as a post-agent middleware, a final step in the graph, or in orchestration after graph returns by reading state; choose one and document.
+- No change to HarnessChangeSet schema; reuse schemas/harness_changes.py.
+
+### Completed work
+- Added shared harness synthesis module: `src/backend/agents/harness_change_synthesis.py` with `synthesize_harness_changes_from_findings(...)`.
+- Migrated deep-agent path to synthesize harness changes via new `TracerHarnessSynthesisMiddleware` in `src/backend/agents/deep_agent_tracer.py`.
+- Middleware now injects both:
+  - `harness_change_set`
+  - `harness_changes`
+  when parallel findings are present and no existing change set is already in state.
+- Added runtime visibility logging for deep-agent harness synthesis injection (run_id, change_count, trace_id_count).
+- Updated legacy LangGraph implementation to reuse the same shared synthesis helper from `langgraph_agent.py`, removing duplicate synthesis logic.
+- Added deep-agent tests:
+  - `test_build_deep_agent_tracer_synthesizes_harness_change_set_from_findings`
+  - `test_build_deep_agent_tracer_skips_harness_change_synthesis_without_findings`
+
+### Validation commands and outcomes
+- `docker compose exec backend uv run pytest tests/agents/test_deep_agent_tracer.py`
+  - Outcome: success (`17 passed in 3.55s`).
+- `docker compose exec backend uv run pytest tests/agents/test_langgraph_agent.py`
+  - Outcome: success (`14 passed in 1.27s`).
+- `curl -s -o /tmp/backend_docs.html -w '%{http_code}\\n' http://localhost:8001/docs`
+  - Outcome: success (`200`).
+
+### Container restart/rebuild logs
+- Pre-task full clean restart (fresh builds/logs):
+  - `docker compose down -v --rmi all`
+  - `docker compose build`
+  - `docker compose up -d`
+- Post-change runtime refresh:
+  - `docker compose restart backend`
+- Running state check:
+  - `docker compose ps` -> `db`, `backend`, `frontend`, and `chrome` all `Up` (`db` healthy).
+- Logs reviewed:
+  - `docker compose logs --tail=160 backend` -> Alembic + Uvicorn startup/reload completed; app startup complete.
+  - `docker compose logs --tail=80 frontend` -> Vite dev server ready.
+  - `docker compose logs --tail=120 db` -> PostgreSQL ready to accept connections.
+
+### Notes
+- Section 8 completed using middleware in deep-agent execution flow (not orchestration post-processing), preserving existing `HarnessChangeSet` schema.

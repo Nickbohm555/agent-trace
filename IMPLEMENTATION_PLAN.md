@@ -3,7 +3,7 @@
 Tasks are in **recommended implementation order** (1…n). Each section = **one context window**.  
 Refactor existing implementation into a **deep-agent library in LangGraph**. Sections are atomic (one deliverable each).
 
-**Current section to work on:** Section 8.
+**Current section to work on:** Section 9.
 
 ---
 
@@ -194,8 +194,9 @@ Refactor existing implementation into a **deep-agent library in LangGraph**. Sec
 
 **How to test:** Integration test: persist a failing trace, invoke deep-agent (or orchestration) with run_id; assert state contains parallel_error_findings and parallel_error_count; optionally assert model receives them in next turn.
 
-**Test results:** (Add when section is complete.)
-- Command and outcome.
+**Test results:**
+- `docker compose exec backend uv run pytest tests/agents/test_deep_agent_tracer.py` -> passed (`17 passed in 3.55s`).
+- `docker compose exec backend uv run pytest tests/agents/test_langgraph_agent.py` -> passed (`14 passed in 1.27s`).
 
 ---
 
