@@ -2,7 +2,7 @@
 
 Tasks are in **recommended implementation order** (1…n). Each section = **one context window**. Sections are atomic (one deliverable each).
 
-**Current section to work on:** Section E7
+**Current section to work on:** Section E8
 
 ---
 

@@ -1143,3 +1143,62 @@
 
 ### Notes
 - Section E6 complete with mocked frontend E2E coverage for submit-guard behavior.
+
+## Section E7: E2E (mocked) — Submit with run_id only, success response shows summary and changes
+
+**Single goal:** With fetch mocked to return 200 and a valid TracerRunResponse (harness_change_set with at least one change), submit form with only Run ID filled; assert Completed, summary text, and at least one harness change title visible.
+
+**Details:**
+- Mock fetch to resolve with ok: true and JSON matching TracerRunResponse (run_id, harness_change_set.summary, harness_changes with title).
+- Render App; fill "Run ID" only; click "Run Tracer". Assert fetch called with POST to /api/tracer/run and body includes run_id.
+- Assert "Completed" in Job Status; assert harness_change_set.summary text on page; assert first change title visible. Covers the main happy path from frontend only.
+
+**Tech stack and dependencies**
+- Vitest, @testing-library/react. Existing setup; mock matches api.ts TracerRunResponse.
+
+**Files and purpose**
+
+| File | Purpose |
+|------|--------|
+| src/frontend/src/App.test.tsx | Added/updated E7 test: run_id-only submit, success, summary + change list visible. |
+
+### Completed work
+- Searched existing test and API code to reuse current patterns before changes:
+  - `src/frontend/src/App.test.tsx`
+  - `src/frontend/src/utils/api.ts`
+- Updated existing happy-path test to E7-specific behavior:
+  - renamed test to `submits run_id only payload and renders completion summary with harness changes`.
+  - removed Trace IDs form input from submission step.
+  - updated mocked successful response to run with `trace_ids: []` and no improvement metrics requirement.
+  - asserted request body includes `run_id` and leaves `trace_ids` undefined.
+  - kept assertions for `Completed`, summary text, and a harness change title.
+
+### Validation commands and outcomes
+- Fresh restart/build before implementation:
+  - `docker compose down -v --rmi all && docker compose build && docker compose up -d`
+  - Outcome: success; `db`, `backend`, `frontend`, `chrome` recreated.
+- Post-change frontend restart:
+  - `docker compose restart frontend`
+  - Outcome: success (`frontend` restarted and returned `Started`).
+- Required frontend test run:
+  - `docker compose exec frontend npm run test -- --run`
+  - Outcome: success (`1 passed file`, `3 passed tests`).
+  - Note: initial `docker compose exec frontend npm run test` attempt exited with code `137`; rerun completed successfully.
+- Runtime state check:
+  - `docker compose ps`
+  - Outcome: `db`, `backend`, `frontend`, and `chrome` all `Up` (`db` healthy).
+
+### Useful logs captured
+- Frontend test logs:
+  - `Submitting tracer run request { runId: 'run-123', traceIdCount: 0, targetRepoUrl: 'default' }`
+  - `Tracer run completed { runId: 'run-123', harnessChangeCount: 1, metricsAvailable: false }`
+  - `✓ src/App.test.tsx (3 tests) ... Test Files 1 passed (1), Tests 3 passed (3)`
+- `docker compose logs --tail=120 frontend`
+  - Vite dev server started cleanly after restart (`VITE v7.3.1 ready`).
+- `docker compose logs --tail=120 backend`
+  - Alembic migration and Uvicorn startup completed successfully.
+- `docker compose logs --tail=120 db`
+  - PostgreSQL initialization/startup completed and database ready to accept connections.
+
+### Notes
+- Section E7 complete.

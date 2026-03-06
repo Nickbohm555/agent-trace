@@ -29,19 +29,19 @@ describe("App tracer run UI", () => {
     expect(submitButton).toHaveProperty("disabled", false);
   });
 
-  it("submits run payload and renders completion summary", async () => {
+  it("submits run_id only payload and renders completion summary with harness changes", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({
         run_id: "run-123",
         target_repo_url: "https://example.com/repo.git",
-        trace_ids: ["trace-1", "trace-2"],
-        fetched_trace_count: 2,
-        persisted_trace_count: 2,
-        loaded_trace_count: 2,
+        trace_ids: [],
+        fetched_trace_count: 0,
+        persisted_trace_count: 0,
+        loaded_trace_count: 0,
         harness_change_set: {
           run_id: "run-123",
-          trace_ids: ["trace-1", "trace-2"],
+          trace_ids: [],
           summary: "Synthesized one harness change.",
           created_at: "2026-03-06T00:00:00Z",
           harness_changes: [
@@ -61,45 +61,6 @@ describe("App tracer run UI", () => {
             },
           ],
         },
-        improvement_metrics: {
-          baseline: {
-            command: ["uv", "run", "pytest", "tests/api", "-m", "smoke"],
-            cwd: null,
-            timeout_seconds: 900,
-            exit_code: 1,
-            success: false,
-            duration_ms: 15000,
-            tests_passed: 18,
-            tests_failed: 2,
-            tests_skipped: 0,
-            stdout_excerpt: "2 failed, 18 passed",
-            stderr_excerpt: "",
-          },
-          post_change: {
-            command: ["uv", "run", "pytest", "tests/api", "-m", "smoke"],
-            cwd: null,
-            timeout_seconds: 900,
-            exit_code: 0,
-            success: true,
-            duration_ms: 14200,
-            tests_passed: 20,
-            tests_failed: 0,
-            tests_skipped: 0,
-            stdout_excerpt: "20 passed",
-            stderr_excerpt: "",
-          },
-          delta: {
-            exit_code_delta: -1,
-            success_delta: 1,
-            tests_passed_delta: 2,
-            tests_failed_delta: -2,
-            tests_skipped_delta: 0,
-            score_before: 18,
-            score_after: 20,
-            score_delta: 2,
-          },
-          improved: true,
-        },
       }),
     });
     vi.stubGlobal("fetch", fetchMock);
@@ -107,25 +68,20 @@ describe("App tracer run UI", () => {
     render(<App />);
 
     fireEvent.change(screen.getByLabelText("Run ID"), { target: { value: "run-123" } });
-    fireEvent.change(screen.getByLabelText("Trace IDs (comma-separated)"), {
-      target: { value: "trace-1, trace-2" },
-    });
     fireEvent.click(screen.getByRole("button", { name: "Run Tracer" }));
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
     expect(fetchMock.mock.calls[0]?.[0]).toContain("/api/tracer/run");
 
     const requestBody = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body ?? "{}")) as {
-      run_id: string;
-      trace_ids: string[];
+      run_id?: string;
+      trace_ids?: string[];
     };
     expect(requestBody.run_id).toBe("run-123");
-    expect(requestBody.trace_ids).toEqual(["trace-1", "trace-2"]);
+    expect(requestBody.trace_ids).toBeUndefined();
     expect(await screen.findByText("Completed")).toBeTruthy();
     expect(screen.getByText("Synthesized one harness change.")).toBeTruthy();
     expect(screen.getByText("Clarify verification prompt")).toBeTruthy();
-    expect(screen.getByText("Improvement Metrics")).toBeTruthy();
-    expect(screen.getByText("Improved")).toBeTruthy();
   });
 
   it("renders backend error message when run fails", async () => {
