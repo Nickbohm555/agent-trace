@@ -5,6 +5,7 @@ description = "Scaffold-only backend for agent-trace"
 requires-python = ">=3.11"
 dependencies = [
   "alembic>=1.16.5",
+  "deepagents>=0.4.6",
   "fastapi>=0.116.1",
   "langchain-core>=0.3.76",
   "langchain-openai>=0.3.33",
