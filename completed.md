@@ -715,3 +715,51 @@
 **Operational note:**
 - Changed container: `backend`.
 - Restarted backend with `docker compose restart backend` and reviewed backend/frontend/db logs.
+
+## Section 18: Synthesis and harness change output
+
+**Depends on:** Sections 16 (parallel analysis), 17 (harness change schema), 4 (graph).
+
+**Single goal:** Main tracer produces structured output (instances of the harness change schema) from synthesized error analysis.
+
+**Deep-agent capability:** Trace Analyzer Skill — synthesis output; main agent produces harness_changes from subagent reports.
+
+**Details implemented:**
+- Updated `src/backend/agents/langgraph_agent.py` with a dedicated synthesis step:
+  - Added `_synthesize_harness_changes(state)` that converts `parallel_error_findings` into a `HarnessChangeSet` using `schemas/harness_changes.py` models.
+  - Added deterministic mapping from `suggested_fix_category` to schema-conforming changes (`prompt`, `tool`, `config`) with confidence/rationale populated.
+  - Aggregates and deduplicates trace IDs, generates summary text, and logs synthesis metadata (`finding_count`, `change_count`, categories).
+- Integrated synthesis into tracer agent execution:
+  - After Section 16 analysis injection, the graph now emits both `harness_change_set` (full serialized change set) and `harness_changes` (list payload) in state updates when findings exist.
+- Updated `src/backend/agents/tracer_state.py` to include:
+  - `harness_change_set`
+  - `harness_changes`
+- Extended `src/backend/tests/agents/test_langgraph_agent.py`:
+  - Verifies synthesized output exists and conforms to expected schema shape for timeout-class failures.
+  - Verifies synthesis is skipped when no findings are present.
+
+**Test results:**
+- `docker compose exec backend uv run pytest tests/agents/test_langgraph_agent.py tests/agents/test_error_analysis_agent.py`
+- Result: `16 passed in 1.09s` on 2026-03-06.
+
+**Useful logs (2026-03-06):**
+- Container status after restart (`docker compose ps`):
+  - `backend` up on `0.0.0.0:8001->8000/tcp`
+  - `frontend` up on `0.0.0.0:5174->5173/tcp`
+  - `db` healthy on `0.0.0.0:5433->5432/tcp`
+- Backend logs (`docker compose logs --tail=140 backend`):
+  - `INFO: Uvicorn running on http://0.0.0.0:8000`
+  - `INFO: Application startup complete.`
+  - `INFO: ... "GET /docs HTTP/1.1" 200 OK`
+  - `WARNING: WatchFiles detected changes ... Reloading...` (expected during iterative edits)
+- Frontend logs (`docker compose logs --tail=100 frontend`):
+  - `VITE v7.3.1 ready`
+  - `Local: http://localhost:5173/`
+- DB logs (`docker compose logs --tail=100 db`):
+  - `database system is ready to accept connections`
+- Backend readiness:
+  - `curl -sf -o /dev/null -w "%{http_code}" http://localhost:8001/docs` returned `200`.
+
+**Operational note:**
+- Changed container: `backend`.
+- Restarted backend with `docker compose restart backend` and reviewed backend/frontend/db logs.

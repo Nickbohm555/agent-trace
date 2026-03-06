@@ -2,7 +2,7 @@
 
 Tasks are in **recommended implementation order** (1…n). Each section = **one context window**. Complete one section at a time. Sections 22–23 add UI to run the tracer and view results.
 
-**Current section to work on:** Section 18.
+**Current section to work on:** Section 19.
 
 ---
 
@@ -549,7 +549,7 @@ The following sections implement a **tracing deep-agent** that consumes traces f
 
 **How to test:** Run tracer with mock analysis results; assert output conforms to schema and contains at least one suggestion when errors exist.
 
-**Test results:** (Add when section is complete.)
+**Test results:** `docker compose exec backend uv run pytest tests/agents/test_langgraph_agent.py tests/agents/test_error_analysis_agent.py` → 16 passed (2026-03-06).
 
 ---
 

@@ -34,3 +34,5 @@ class TracerState(TypedDict, total=False):
     parallel_error_findings: list[dict[str, Any]]
     parallel_error_count: int
     parallel_analysis_completed: bool
+    harness_changes: list[dict[str, Any]]
+    harness_change_set: dict[str, Any]

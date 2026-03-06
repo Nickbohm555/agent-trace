@@ -489,3 +489,30 @@ def test_build_tracer_graph_injects_parallel_error_findings_from_trace_storage()
     assert observed_findings[0]["suggested_fix_category"] == "timeout_or_retry_policy"
     assert result["parallel_analysis_completed"] is True
     assert result["parallel_error_count"] == 1
+    assert result["harness_change_set"]["run_id"] == "run-error-analysis"
+    assert result["harness_change_set"]["trace_ids"] == ["trace-err-1"]
+    assert result["harness_change_set"]["harness_changes"][0]["category"] == "config"
+    assert (
+        result["harness_change_set"]["harness_changes"][0]["config_change"]["key"]
+        == "sandbox.command_timeout_seconds"
+    )
+    assert result["harness_changes"] == result["harness_change_set"]["harness_changes"]
+
+
+def test_build_tracer_graph_skips_harness_change_synthesis_without_findings() -> None:
+    graph = build_tracer_graph(
+        model_invoke=lambda _state, _phase, _level: AIMessage(content="No findings present"),
+    )
+    result = graph.invoke(
+        {
+            "messages": [],
+            "run_id": "run-no-findings",
+            "current_trace_summary": None,
+            "pre_completion_verified": True,
+            "parallel_analysis_completed": True,
+            "parallel_error_findings": [],
+        }
+    )
+
+    assert "harness_change_set" not in result
+    assert "harness_changes" not in result
