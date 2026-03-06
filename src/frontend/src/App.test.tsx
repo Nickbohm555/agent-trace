@@ -11,6 +11,24 @@ afterEach(() => {
 });
 
 describe("App tracer run UI", () => {
+  it("disables submit and shows hint until run id or trace ids are provided", () => {
+    render(<App />);
+
+    const submitButton = screen.getByRole("button", { name: "Run Tracer" });
+    const runIdInput = screen.getByLabelText("Run ID");
+    const traceIdsInput = screen.getByLabelText("Trace IDs (comma-separated)");
+
+    expect(submitButton).toHaveProperty("disabled", true);
+    expect(screen.getByText("Provide `Run ID` or at least one `Trace ID`.")).toBeTruthy();
+
+    fireEvent.change(runIdInput, { target: { value: "run-123" } });
+    expect(submitButton).toHaveProperty("disabled", false);
+
+    fireEvent.change(runIdInput, { target: { value: "" } });
+    fireEvent.change(traceIdsInput, { target: { value: "trace-a, trace-b" } });
+    expect(submitButton).toHaveProperty("disabled", false);
+  });
+
   it("submits run payload and renders completion summary", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,

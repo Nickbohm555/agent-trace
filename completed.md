@@ -1088,3 +1088,58 @@
 
 ### Notes
 - Section E5 is complete. The launch script now waits for the DevTools endpoint so AGENTS.md workflow commands are stable.
+
+## Section E6: E2E (mocked) — Form validation and submit guard
+
+**Single goal:** With mocked fetch, verify the form disables submit when neither Run ID nor Trace IDs are provided and shows the hint; submit is enabled when at least one is provided.
+
+**Details:**
+- Render App; assert "Run Tracer" button is disabled when both run_id and trace_ids inputs are empty.
+- Assert hint text "Provide `Run ID` or at least one `Trace ID`" is visible when canSubmit is false.
+- Fill Run ID (or Trace IDs); assert button becomes enabled. No fetch mock needed for disabled state; optional mock for submit to avoid unhandled promise.
+- All assertions via React Testing Library (screen.getByRole, getByLabelText, getByText).
+
+**Tech stack and dependencies**
+- Vitest, @testing-library/react. No new packages; existing frontend test setup.
+
+**Files and purpose**
+
+| File | Purpose |
+|------|--------|
+| src/frontend/src/App.test.tsx | Added E6 coverage for form validation and submit guard behavior. |
+
+### Completed work
+- Added test `disables submit and shows hint until run id or trace ids are provided` in `src/frontend/src/App.test.tsx`.
+- Test verifies initial disabled submit state and validation hint text.
+- Test verifies submit button becomes enabled after setting `Run ID`.
+- Test verifies submit button also becomes enabled with `Trace IDs` when `Run ID` is empty.
+
+### Validation commands and outcomes
+- `docker compose exec frontend npm run test`
+  - Outcome: success (`1 passed file`, `3 passed tests`).
+
+### Container restart/rebuild logs
+- Pre-task full clean restart (fresh builds/logs):
+  - `docker compose down -v --rmi all`
+  - `docker compose build`
+  - `docker compose up -d`
+- Post-change runtime refresh:
+  - `docker compose restart frontend`
+- Running state check:
+  - `docker compose ps` -> `db`, `backend`, `frontend`, and `chrome` all `Up` (`db` healthy).
+- Logs reviewed:
+  - `docker compose logs --tail=120 backend` -> Alembic upgrade ran; Uvicorn startup complete.
+  - `docker compose logs --tail=120 frontend` -> Vite dev server ready after restart.
+  - `docker compose logs --tail=120 db` -> PostgreSQL ready to accept connections.
+
+### Useful log excerpts
+- Frontend test run:
+  - `✓ src/App.test.tsx (3 tests) 382ms`
+  - `Test Files  1 passed (1)`
+  - `Tests  3 passed (3)`
+- Backend startup:
+  - `INFO:     Uvicorn running on http://0.0.0.0:8000`
+  - `INFO:     Application startup complete.`
+
+### Notes
+- Section E6 complete with mocked frontend E2E coverage for submit-guard behavior.
