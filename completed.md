@@ -1326,3 +1326,70 @@
 
 ### Notes
 - Section E9 complete.
+
+## Section E10: E2E (mocked) — Running state while request in flight
+
+**Single goal:** Mock fetch with a promise that resolves after a short delay. After clicking Run Tracer, assert button text is "Running..." and Job Status shows "Running" before resolution; after resolution, assert "Completed" and "Run Tracer" again.
+
+**Details:**
+- Use vi.fn() that returns a Promise resolving after e.g. 50ms with success JSON. Click submit; immediately assert "Running..." and "Running". await waitFor for "Completed" and summary. Ensures loading state is visible and clears on success.
+
+**Tech stack and dependencies**
+- Vitest, @testing-library/react. No new packages.
+
+**Files and purpose**
+
+| File | Purpose |
+|------|--------|
+| src/frontend/src/App.test.tsx | Added test: running state during request, then completed. |
+
+**How to test:** `npm run test`; assert Running state then Completed.
+
+### Completed work
+- Searched and reused existing frontend patterns before editing:
+  - `src/frontend/src/App.test.tsx`
+  - `src/frontend/src/App.tsx`
+  - `src/frontend/src/utils/api.ts`
+- Added test `shows running state while tracer request is in flight and resets controls on completion` in `src/frontend/src/App.test.tsx`.
+- Mocked `fetch` with a delayed Promise (`setTimeout(..., 50)`) returning a valid success payload.
+- Asserted immediate in-flight UI state:
+  - submit button label becomes `Running...`
+  - Job Status displays `Running`
+- Asserted resolved state:
+  - Job Status becomes `Completed`
+  - submit button label returns to `Run Tracer`
+  - response summary text is rendered.
+
+### Validation commands and outcomes
+- Pre-task full fresh restart:
+  - `docker compose down -v --rmi all`
+  - `docker compose build`
+  - `docker compose up -d`
+  - Outcome: success; stack rebuilt and restarted with fresh containers/volumes.
+- Post-change app restart for visibility and consistency:
+  - `docker compose restart`
+  - Outcome: success; `db`, `backend`, `frontend`, and `chrome` restarted.
+- Required section/frontend tests:
+  - `docker compose exec frontend npm run test`
+  - Outcome: success (`1 passed file`, `6 passed tests`).
+- Runtime state check:
+  - `docker compose ps`
+  - Outcome: `db`, `backend`, `frontend`, and `chrome` all `Up` (`db` healthy).
+
+### Useful logs captured
+- Frontend test logs:
+  - `Submitting tracer run request { runId: 'run-delayed-1', traceIdCount: 0, targetRepoUrl: 'default' }`
+  - `Tracer run completed { runId: 'run-delayed-1', harnessChangeCount: 0, metricsAvailable: false }`
+  - `✓ src/App.test.tsx (6 tests)`
+  - `Test Files  1 passed (1)`
+  - `Tests  6 passed (6)`
+- Backend container logs (`docker compose logs --tail=60 backend`):
+  - Alembic migration context initialized and app startup completed after restart.
+  - Uvicorn ready on `http://0.0.0.0:8000` with reloader + server process startup complete.
+- Frontend container logs (`docker compose logs --tail=60 frontend`):
+  - Vite dev server started cleanly and is serving on `http://localhost:5173`.
+- DB container logs (`docker compose logs --tail=60 db`):
+  - PostgreSQL restarted cleanly and reports `database system is ready to accept connections`.
+
+### Notes
+- Section E10 complete on March 6, 2026.

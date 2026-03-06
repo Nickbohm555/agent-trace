@@ -175,6 +175,48 @@ describe("App tracer run UI", () => {
     expect(screen.queryByRole("heading", { name: "Improvement Metrics" })).toBeNull();
   });
 
+  it("shows running state while tracer request is in flight and resets controls on completion", async () => {
+    const fetchMock = vi.fn().mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          setTimeout(() => {
+            resolve({
+              ok: true,
+              json: async () => ({
+                run_id: "run-delayed-1",
+                target_repo_url: "https://example.com/repo.git",
+                trace_ids: [],
+                fetched_trace_count: 0,
+                persisted_trace_count: 0,
+                loaded_trace_count: 0,
+                harness_change_set: {
+                  run_id: "run-delayed-1",
+                  trace_ids: [],
+                  summary: "Delayed run completed successfully.",
+                  created_at: "2026-03-06T00:00:00Z",
+                  harness_changes: [],
+                },
+                improvement_metrics: null,
+              }),
+            });
+          }, 50);
+        }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    fireEvent.change(screen.getByLabelText("Run ID"), { target: { value: "run-delayed-1" } });
+    fireEvent.click(screen.getByRole("button", { name: "Run Tracer" }));
+
+    expect(screen.getByRole("button", { name: "Running..." })).toBeTruthy();
+    expect(screen.getByText("Running")).toBeTruthy();
+
+    expect(await screen.findByText("Completed")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Run Tracer" })).toBeTruthy();
+    expect(screen.getByText("Delayed run completed successfully.")).toBeTruthy();
+  });
+
   it("renders backend error message when run fails", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: false,
