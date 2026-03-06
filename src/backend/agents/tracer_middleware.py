@@ -9,6 +9,7 @@ from agents.tracer_state import TracerState
 
 logger = logging.getLogger(__name__)
 DEFAULT_TIME_BUDGET_NOTICE_INTERVAL_STEPS = 3
+DEFAULT_LOOP_DETECTION_THRESHOLD = 10
 
 _PRE_COMPLETION_CHECKLIST = "\n".join(
     [
@@ -137,6 +138,78 @@ def apply_time_budget_injection(
             "step_count": step_count,
             "max_steps": max_steps,
             "max_runtime_seconds": max_runtime_seconds,
+        },
+    )
+    return updated_state, message
+
+
+def _extract_edit_file_paths(message: AIMessage) -> list[str]:
+    paths: list[str] = []
+    for tool_call in getattr(message, "tool_calls", []) or []:
+        if tool_call.get("name") != "edit_file":
+            continue
+        args = tool_call.get("args", {})
+        if not isinstance(args, dict):
+            continue
+        path = args.get("path")
+        if isinstance(path, str) and path.strip():
+            paths.append(path)
+    return paths
+
+
+def build_loop_detection_message(*, threshold: int, triggered_paths: list[tuple[str, int]]) -> str:
+    lines = [
+        "Loop detection notice:",
+        (
+            "You have edited the same file repeatedly. Reconsider your approach before continuing "
+            "to avoid a doom loop."
+        ),
+        f"- threshold: {threshold}",
+    ]
+    for path, count in triggered_paths:
+        lines.append(f"- file: {path} (edits: {count})")
+    return "\n".join(lines)
+
+
+def apply_loop_detection_injection(
+    state: TracerState,
+    *,
+    response: AIMessage,
+) -> tuple[TracerState, SystemMessage | None]:
+    updated_state: TracerState = dict(state)
+    edit_paths = _extract_edit_file_paths(response)
+    if not edit_paths:
+        return updated_state, None
+
+    threshold = max(1, int(updated_state.get("loop_detection_threshold", DEFAULT_LOOP_DETECTION_THRESHOLD)))
+    edit_counts = dict(updated_state.get("edit_file_counts", {}))
+    nudged_files = set(updated_state.get("loop_detection_nudged_files", []))
+    triggered_paths: list[tuple[str, int]] = []
+
+    for path in edit_paths:
+        next_count = int(edit_counts.get(path, 0)) + 1
+        edit_counts[path] = next_count
+        if next_count >= threshold and path not in nudged_files:
+            triggered_paths.append((path, next_count))
+            nudged_files.add(path)
+
+    updated_state["edit_file_counts"] = edit_counts
+    updated_state["loop_detection_nudged_files"] = sorted(nudged_files)
+    if not triggered_paths:
+        return updated_state, None
+
+    message = SystemMessage(
+        content=build_loop_detection_message(
+            threshold=threshold,
+            triggered_paths=triggered_paths,
+        )
+    )
+    logger.info(
+        "Injecting loop-detection nudge after repeated file edits",
+        extra={
+            "run_id": updated_state.get("run_id"),
+            "threshold": threshold,
+            "triggered_paths": [path for path, _ in triggered_paths],
         },
     )
     return updated_state, message

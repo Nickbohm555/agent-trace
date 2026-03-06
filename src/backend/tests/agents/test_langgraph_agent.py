@@ -385,3 +385,60 @@ def test_build_tracer_graph_injects_time_budget_message_with_short_budget() -> N
     )
     assert result["agent_step_count"] == 1
     assert result["messages"][-1].content == "Budget acknowledged"
+
+
+def test_build_tracer_graph_injects_loop_detection_message_before_repeated_edit() -> None:
+    saw_loop_detection_context = False
+    edit_tool = StructuredTool.from_function(
+        name="edit_file",
+        description="Fake edit tool for loop detection tests.",
+        func=lambda sandbox_path, path, content: {
+            "sandbox_path": sandbox_path,
+            "path": path,
+            "content": content,
+            "status": "updated",
+        },
+    )
+
+    call_count = 0
+
+    def model_invoke(state: dict[str, object], _: str, __: str) -> AIMessage:
+        nonlocal call_count, saw_loop_detection_context
+        call_count += 1
+        if call_count == 1:
+            return AIMessage(
+                content="Edit same file",
+                tool_calls=[
+                    {
+                        "name": "edit_file",
+                        "args": {"sandbox_path": "/tmp/sb", "path": "src/app.py", "content": "v1"},
+                        "id": "tc-edit-loop",
+                    }
+                ],
+            )
+
+        saw_loop_detection_context = any(
+            isinstance(message, SystemMessage) and "Loop detection notice:" in str(message.content)
+            for message in state["messages"]
+        )
+        return AIMessage(content="Approach reconsidered")
+
+    graph = build_tracer_graph(model_invoke=model_invoke, tools=[edit_tool])
+    result = graph.invoke(
+        {
+            "messages": [],
+            "run_id": "run-loop-detection",
+            "current_trace_summary": None,
+            "pre_completion_verified": True,
+            "loop_detection_threshold": 1,
+        }
+    )
+
+    assert call_count == 2
+    assert saw_loop_detection_context is True
+    assert any(
+        isinstance(message, SystemMessage) and "Loop detection notice:" in str(message.content)
+        for message in result["messages"]
+    )
+    assert result["edit_file_counts"]["src/app.py"] == 1
+    assert "src/app.py" in result["loop_detection_nudged_files"]

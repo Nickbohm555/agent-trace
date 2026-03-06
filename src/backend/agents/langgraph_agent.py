@@ -18,6 +18,7 @@ from agents.tracer_config import (
 )
 from agents.tracer_context import build_local_context_message, contains_local_context_message
 from agents.tracer_middleware import (
+    apply_loop_detection_injection,
     apply_time_budget_injection,
     pre_completion_check_node,
     should_inject_pre_completion_checklist,
@@ -151,16 +152,24 @@ def build_tracer_graph(
                 extra={"phase": phase, "reasoning_level": level, "run_id": state.get("run_id")},
             )
             response = selected_model_invoke(invoke_state, phase, level)
+            loop_detection_state, loop_detection_message = apply_loop_detection_injection(
+                budgeted_state,
+                response=response,
+            )
             output_messages: list[AnyMessage] = [response]
             if time_budget_message is not None:
-                output_messages = [time_budget_message, response]
+                output_messages = [time_budget_message, *output_messages]
+            if loop_detection_message is not None:
+                output_messages = [*output_messages[:-1], loop_detection_message, output_messages[-1]]
             updates: dict[str, Any] = {
                 "messages": output_messages,
-                "agent_step_count": budgeted_state["agent_step_count"],
-                "run_started_at_epoch_seconds": budgeted_state["run_started_at_epoch_seconds"],
+                "agent_step_count": loop_detection_state["agent_step_count"],
+                "run_started_at_epoch_seconds": loop_detection_state["run_started_at_epoch_seconds"],
+                "edit_file_counts": loop_detection_state.get("edit_file_counts", {}),
+                "loop_detection_nudged_files": loop_detection_state.get("loop_detection_nudged_files", []),
             }
-            if "time_budget_last_notice_step" in budgeted_state:
-                updates["time_budget_last_notice_step"] = budgeted_state["time_budget_last_notice_step"]
+            if "time_budget_last_notice_step" in loop_detection_state:
+                updates["time_budget_last_notice_step"] = loop_detection_state["time_budget_last_notice_step"]
             if contextual_state.get("local_context") and not state.get("local_context"):
                 updates["local_context"] = contextual_state["local_context"]
             return updates

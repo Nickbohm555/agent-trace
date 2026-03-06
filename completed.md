@@ -569,3 +569,50 @@
 **Operational note:**
 - Changed container: `backend`.
 - Restarted changed service with `docker compose restart backend` and reviewed backend/frontend/db logs after restart.
+
+## Section 15: Loop detection middleware
+
+**Depends on:** Section 4 (graph), Section 8 (edit_file tool to hook).
+
+**Single goal:** Track per-file edit counts and, after N edits to the same file, inject a “reconsider your approach” nudge to avoid doom loops (per article).
+
+**Deep-agent capability:** Middleware — loop detection (LoopDetectionMiddleware; tool-call hooks, per-file edit threshold).
+
+**Details implemented:**
+- Extended `src/backend/agents/tracer_state.py` with loop-detection state fields: `edit_file_counts`, `loop_detection_threshold`, and `loop_detection_nudged_files`.
+- Added loop middleware to `src/backend/agents/tracer_middleware.py`:
+  - `apply_loop_detection_injection(...)` inspects AI tool calls, increments per-file counts for `edit_file`, and injects a nudge once a file reaches threshold.
+  - `build_loop_detection_message(...)` creates a structured “reconsider your approach” notice with threshold and impacted file counts.
+  - Added middleware logging for triggered loop-detection nudges and affected file paths.
+- Integrated loop detection into `src/backend/agents/langgraph_agent.py` configured agent execution:
+  - Loop detection now runs on each model response.
+  - Loop-detection system nudges are inserted before the AI tool-call message so tool routing remains intact.
+  - Loop-detection state is persisted on each turn for later middleware checks/observability.
+- Added tests:
+  - `src/backend/tests/agents/test_tracer_middleware.py` now validates threshold-triggered nudge injection and loop message content.
+  - `src/backend/tests/agents/test_langgraph_agent.py` now validates graph-level loop nudge injection when repeated `edit_file` calls hit threshold.
+
+**Test results:**
+- `docker compose exec backend uv run pytest tests/agents/test_tracer_middleware.py tests/agents/test_langgraph_agent.py`
+- Result: `19 passed in 2.08s` on 2026-03-06.
+
+**Useful logs (2026-03-06):**
+- Container status after implementation/restart (`docker compose ps`):
+  - `backend` up on `0.0.0.0:8001->8000/tcp`
+  - `frontend` up on `0.0.0.0:5174->5173/tcp`
+  - `db` healthy on `0.0.0.0:5433->5432/tcp`
+- Backend logs (`docker compose logs --tail=120 backend frontend db`):
+  - `INFO: Uvicorn running on http://0.0.0.0:8000`
+  - `INFO: Application startup complete.`
+  - `WARNING: WatchFiles detected changes ... Reloading...` (expected during iterative edits)
+- Frontend logs:
+  - `VITE v7.3.1 ready`
+  - `Local: http://localhost:5173/`
+- DB logs:
+  - `database system is ready to accept connections`
+- Backend readiness:
+  - `curl -sf http://localhost:8001/docs >/dev/null && echo backend_docs_ok` returned `backend_docs_ok`.
+
+**Operational note:**
+- Changed container: `backend`.
+- Restarted backend with `docker compose restart backend` and reviewed backend/frontend/db logs after restart.

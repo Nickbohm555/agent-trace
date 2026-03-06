@@ -4,7 +4,9 @@ from langchain_core.messages import AIMessage, SystemMessage
 
 from agents.langgraph_agent import build_tracer_graph
 from agents.tracer_middleware import (
+    apply_loop_detection_injection,
     apply_time_budget_injection,
+    build_loop_detection_message,
     build_time_budget_message,
     build_pre_completion_checklist_message,
     should_inject_pre_completion_checklist,
@@ -91,3 +93,39 @@ def test_build_time_budget_message_contains_runtime_and_step_remaining() -> None
     assert "Time budget status:" in message
     assert "runtime_remaining: 1m 30s" in message
     assert "steps_remaining: 6" in message
+
+
+def test_apply_loop_detection_injection_emits_nudge_after_threshold() -> None:
+    updated_state, message = apply_loop_detection_injection(
+        {
+            "run_id": "run-loop",
+            "edit_file_counts": {"src/app.py": 1},
+            "loop_detection_threshold": 2,
+        },
+        response=AIMessage(
+            content="Apply fix",
+            tool_calls=[
+                {
+                    "name": "edit_file",
+                    "args": {"sandbox_path": "/tmp/sb", "path": "src/app.py", "content": "next"},
+                    "id": "tc-edit-1",
+                }
+            ],
+        ),
+    )
+
+    assert updated_state["edit_file_counts"]["src/app.py"] == 2
+    assert message is not None
+    assert "Loop detection notice:" in str(message.content)
+    assert "file: src/app.py (edits: 2)" in str(message.content)
+
+
+def test_build_loop_detection_message_includes_threshold_and_paths() -> None:
+    message = build_loop_detection_message(
+        threshold=5,
+        triggered_paths=[("src/main.py", 5), ("src/util.py", 7)],
+    )
+
+    assert "threshold: 5" in message
+    assert "file: src/main.py (edits: 5)" in message
+    assert "file: src/util.py (edits: 7)" in message

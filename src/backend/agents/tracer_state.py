@@ -27,3 +27,6 @@ class TracerState(TypedDict, total=False):
     time_budget_notice_interval_steps: int
     agent_step_count: int
     time_budget_last_notice_step: int
+    edit_file_counts: dict[str, int]
+    loop_detection_threshold: int
+    loop_detection_nudged_files: list[str]
