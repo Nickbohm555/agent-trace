@@ -210,3 +210,49 @@
 
 ### Notes
 - Section 6 is complete and reuses existing loop-detection helper logic without changing tool contracts or API shape.
+
+## Section 7: Migrate parallel error analysis to deep-agent flow
+
+**Single goal:** Run parallel error-analysis workers and inject their findings into deep-agent state so the main agent can use them (Trace Analyzer Skill pattern).
+
+**Details:**
+- Load traces by run_id (or trace_ids) via TraceStorageService; run existing `analyze_errors_in_parallel` (error_analysis_agent); inject parallel_error_findings and parallel_error_count into state before or at the start of deep-agent execution.
+- Can be done in orchestration (before invoking the graph) or in a deep-agent middleware that runs once when run_id is set and parallel_analysis_completed is false; set parallel_analysis_completed when done.
+- No change to HarnessChangeSet schema or synthesis logic in this section; only injection of findings.
+
+### Completed work
+- Added `TracerParallelErrorAnalysisMiddleware` in `src/backend/agents/deep_agent_tracer.py`.
+- Middleware reuses existing logic from `src/backend/agents/error_analysis_agent.py` (`collect_error_tasks`, `analyze_errors_in_parallel`) and trace loading via `TraceStorageService` + `TraceStorageQuery`.
+- Middleware behavior:
+  - runs once per run when `parallel_analysis_completed` is not set,
+  - skips when `run_id` is missing,
+  - loads traces by `run_id`, computes error tasks, runs parallel analysis, and injects:
+    - `parallel_error_findings`
+    - `parallel_error_count`
+    - `parallel_analysis_completed=True`
+- Registered middleware in `build_deep_agent_tracer(...)` so findings are injected in deep-agent flow before model turns.
+- Added integration-style test `test_build_deep_agent_tracer_injects_parallel_error_findings_from_trace_storage` in `src/backend/tests/agents/test_deep_agent_tracer.py`:
+  - persists a failing trace to storage,
+  - invokes deep-agent graph with `run_id`,
+  - asserts injected state keys and expected fix-category payload.
+
+### Validation commands and outcomes
+- `docker compose exec backend uv run pytest tests/agents/test_deep_agent_tracer.py`
+  - Outcome: success (`15 passed in 2.96s`).
+
+### Container restart/rebuild logs
+- Pre-task full clean restart (fresh builds/logs):
+  - `docker compose down -v --rmi all`
+  - `docker compose build`
+  - `docker compose up -d`
+- Post-change runtime refresh:
+  - `docker compose restart backend`
+- Running state check:
+  - `docker compose ps` -> `db`, `backend`, `frontend`, and `chrome` all `Up` (`db` healthy).
+- Logs reviewed:
+  - `docker compose logs --tail=120 backend` -> Alembic context loaded; Uvicorn startup complete; reloads observed for edited files; final server process running.
+  - `docker compose logs --tail=80 frontend` -> Vite dev server ready.
+  - `docker compose logs --tail=80 db` -> PostgreSQL ready to accept connections.
+
+### Notes
+- Section 7 completed in deep-agent middleware without changing harness synthesis schema/logic.

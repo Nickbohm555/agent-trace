@@ -3,7 +3,7 @@
 Tasks are in **recommended implementation order** (1…n). Each section = **one context window**.  
 Refactor existing implementation into a **deep-agent library in LangGraph**. Sections are atomic (one deliverable each).
 
-**Current section to work on:** Section 7.
+**Current section to work on:** Section 8.
 
 ---
 
@@ -166,8 +166,8 @@ Refactor existing implementation into a **deep-agent library in LangGraph**. Sec
 
 **How to test:** Unit test: run deep-agent with mock edit_file tool; trigger N edits to same file; assert nudge message is injected and state (edit_file_counts, loop_detection_nudged_files) is updated.
 
-**Test results:** (Add when section is complete.)
-- Command and outcome.
+**Test results:**
+- `docker compose exec backend uv run pytest tests/agents/test_deep_agent_tracer.py` -> passed (`15 passed in 2.96s`).
 
 ---
 

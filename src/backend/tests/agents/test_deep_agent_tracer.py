@@ -6,12 +6,17 @@ from typing import Annotated, get_args, get_origin, get_type_hints
 import pytest
 from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
 
 from agents import deep_agent_tracer
 from agents.deep_agent_tracer import build_deep_agent_tracer
+from models import Base
+from schemas.trace import NormalizedTrace, NormalizedTraceError
 from agents.tracer_state import TracerState
 from schemas.sandbox import SandboxCreateRequest
 from services.sandbox_service import SandboxService
+from services.trace_storage_service import TraceStorageService
 
 
 def _patch_bind_tools(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -227,6 +232,45 @@ def test_build_deep_agent_tracer_injects_loop_detection_notice_for_repeated_edit
     assert result["messages"][-1].content == "Edits complete."
 
     sandbox_service.teardown_sandbox(session)
+
+
+def test_build_deep_agent_tracer_injects_parallel_error_findings_from_trace_storage(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_bind_tools(monkeypatch)
+    engine = create_engine("sqlite+pysqlite:///:memory:", future=True)
+    Base.metadata.create_all(engine)
+    session_factory = sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
+    trace_storage_service = TraceStorageService(session_factory=session_factory)
+    trace_storage_service.save_traces(
+        [
+            NormalizedTrace(
+                trace_id="trace-err-1",
+                run_id="run-error-analysis",
+                error=NormalizedTraceError(message="request timeout", error_type="TimeoutError"),
+            )
+        ]
+    )
+
+    graph = build_deep_agent_tracer(
+        model=FakeMessagesListChatModel(
+            responses=[AIMessage(content="Parallel findings captured.")],
+        ),
+        trace_storage_service=trace_storage_service,
+    )
+    result = graph.invoke(
+        {
+            "messages": [HumanMessage(content="Analyze run errors")],
+            "run_id": "run-error-analysis",
+            "pre_completion_verified": True,
+        }
+    )
+
+    assert result["parallel_analysis_completed"] is True
+    assert result["parallel_error_count"] == 1
+    assert len(result["parallel_error_findings"]) == 1
+    assert result["parallel_error_findings"][0]["trace_id"] == "trace-err-1"
+    assert result["parallel_error_findings"][0]["suggested_fix_category"] == "timeout_or_retry_policy"
 
 
 def test_build_deep_agent_tracer_uses_tracer_system_prompt(monkeypatch: pytest.MonkeyPatch) -> None:

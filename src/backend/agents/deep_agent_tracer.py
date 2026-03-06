@@ -19,6 +19,7 @@ from agents.tracer_config import (
     resolve_reasoning_phase,
 )
 from agents.tracer_context import build_local_context_message, contains_local_context_message
+from agents.error_analysis_agent import analyze_errors_in_parallel, collect_error_tasks
 from agents.tracer_middleware import (
     apply_loop_detection_injection,
     apply_time_budget_injection,
@@ -27,6 +28,7 @@ from agents.tracer_middleware import (
 )
 from agents.tracer_prompts import build_tracer_system_prompt
 from agents.tracer_state import TracerState
+from schemas.trace import TraceStorageQuery
 from services.sandbox_service import SandboxService
 from services.trace_storage_service import TraceStorageService
 from tools.codebase_tools import build_edit_file_tool, build_list_directory_tool, build_read_file_tool
@@ -134,6 +136,44 @@ class TracerLocalContextMiddleware(AgentMiddleware[TracerState, Any, Any]):
         return {
             "local_context": context_message,
             "messages": [SystemMessage(content=context_message), *messages],
+        }
+
+
+class TracerParallelErrorAnalysisMiddleware(AgentMiddleware[TracerState, Any, Any]):
+    """Run parallel trace error analysis once and inject findings into tracer state."""
+
+    def __init__(self, *, trace_storage_service: TraceStorageService | None) -> None:
+        self._trace_storage_service = trace_storage_service
+
+    def before_agent(self, state: TracerState, runtime: Any) -> dict[str, Any] | None:
+        del runtime
+        if self._trace_storage_service is None:
+            return None
+        if state.get("parallel_analysis_completed"):
+            return None
+
+        run_id = state.get("run_id")
+        if not run_id:
+            logger.info("Skipping parallel error analysis because run_id is missing")
+            return None
+
+        traces = self._trace_storage_service.load_traces(TraceStorageQuery(run_id=run_id, limit=200))
+        error_tasks = collect_error_tasks(traces)
+        findings = analyze_errors_in_parallel(error_tasks)
+        payloads = [finding.to_payload() for finding in findings]
+
+        logger.info(
+            "Injected parallel error-analysis findings into deep-agent state",
+            extra={
+                "run_id": run_id,
+                "error_count": len(error_tasks),
+                "finding_count": len(findings),
+            },
+        )
+        return {
+            "parallel_error_count": len(error_tasks),
+            "parallel_error_findings": payloads,
+            "parallel_analysis_completed": True,
         }
 
 
@@ -326,6 +366,7 @@ def build_deep_agent_tracer(
         tools=resolved_tools,
         middleware=[
             TracerStateSchemaMiddleware(),
+            TracerParallelErrorAnalysisMiddleware(trace_storage_service=trace_storage_service),
             TracerLocalContextMiddleware(sandbox_service=sandbox_service),
             TracerSandboxScopeMiddleware(),
             TracerTimeBudgetMiddleware(),
