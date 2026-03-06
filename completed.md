@@ -1454,3 +1454,73 @@
 
 ### Notes
 - Section E11 complete on March 6, 2026.
+
+## Section E12: E2E (mocked) — Network or 5xx error shows generic message
+
+**Single goal:** Mock fetch to resolve with ok: false and no JSON or non-JSON body (or status 500). Assert Job Status "Failed" and that a non-empty error message is shown (fallback from parseErrorMessage).
+
+**Details:**
+- Mock: ok: false, status: 500, json: async () => ({ detail: "Internal server error" }) or throw. Assert "Failed" and that screen has an error paragraph with content. Ensures error path does not leave UI blank.
+
+**Tech stack and dependencies**
+- Vitest, @testing-library/react. No new packages.
+
+**Files and purpose**
+
+| File | Purpose |
+|------|--------|
+| src/frontend/src/App.test.tsx | Added test: 5xx non-JSON error -> fallback message is visible. |
+
+**How to test:** `npm run test`; assert Failed and error message present.
+
+### Completed work
+- Searched and reused existing frontend implementation before editing:
+  - `src/frontend/src/App.test.tsx`
+  - `src/frontend/src/App.tsx`
+  - `src/frontend/src/utils/api.ts`
+- Added test `shows generic fallback message when backend returns a 500 non-json error` in `src/frontend/src/App.test.tsx`.
+- Mocked `fetch` as `ok: false`, `status: 500`, with `json()` throwing to simulate non-JSON error payload.
+- Asserted UI behavior:
+  - Job Status renders `Failed`.
+  - Fallback message `Tracer run failed with status 500.` is shown.
+
+### Validation commands and outcomes
+- Required full clean restart before implementation:
+  - `docker compose down -v --rmi all`
+  - `docker compose build`
+  - `docker compose up -d`
+  - Outcome: success; rebuilt/restarted stack with fresh volumes/images.
+- Service readiness checks:
+  - `docker compose ps`
+  - `curl http://localhost:8001/api/health` -> `200` with `{"status":"ok"}`
+  - `curl http://localhost:8001/docs` -> `200`
+- Required frontend tests:
+  - `docker compose exec frontend npm run test`
+  - Outcome: success (`1 passed file`, `7 passed tests`).
+- Post-change container restart for changed service:
+  - `docker compose restart frontend`
+  - Outcome: success.
+- Post-restart container verification:
+  - `docker compose ps`
+  - Outcome: `db` healthy; `backend`, `frontend`, `chrome` up.
+
+### Useful logs captured
+- Frontend test logs:
+  - `stderr | src/App.test.tsx > App tracer run UI > shows generic fallback message when backend returns a 500 non-json error`
+  - `Tracer run failed { error: 'Tracer run failed with status 500.' }`
+  - `✓ src/App.test.tsx (7 tests)`
+  - `Test Files  1 passed (1)`
+  - `Tests  7 passed (7)`
+- Backend logs (`docker compose logs --tail=120 backend`):
+  - Alembic migration + Uvicorn startup completed.
+  - Readiness requests succeeded:
+    - `GET /api/health` -> `200 OK`
+    - `GET /docs` -> `200 OK`
+- Frontend logs (`docker compose logs --tail=120 frontend`):
+  - Vite dev server restarted cleanly and is serving on `http://localhost:5173/`.
+- DB logs (`docker compose logs --tail=120 db`):
+  - PostgreSQL initialized and reached `database system is ready to accept connections`.
+
+### Notes
+- Section E12 complete on March 6, 2026.
+- Chrome debug endpoint verification (`curl http://127.0.0.1:9223/json/list`): returned JSON target list with `webSocketDebuggerUrl`.

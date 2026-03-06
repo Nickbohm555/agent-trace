@@ -241,4 +241,23 @@ describe("App tracer run UI", () => {
     expect(await screen.findByText("Failed")).toBeTruthy();
     expect(screen.getByText("Value error, Provide at least one of run_id or trace_ids.")).toBeTruthy();
   });
+
+  it("shows generic fallback message when backend returns a 500 non-json error", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 500,
+      json: async () => {
+        throw new Error("Unexpected token < in JSON");
+      },
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    fireEvent.change(screen.getByLabelText("Run ID"), { target: { value: "run-500" } });
+    fireEvent.click(screen.getByRole("button", { name: "Run Tracer" }));
+
+    expect(await screen.findByText("Failed")).toBeTruthy();
+    expect(screen.getByText("Tracer run failed with status 500.")).toBeTruthy();
+  });
 });
