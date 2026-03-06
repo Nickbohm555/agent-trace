@@ -939,3 +939,47 @@
 
 ### Notes
 - Containers changed in this iteration due explicit fresh restart/rebuild before work; no subsequent code changes required any additional service restarts.
+
+## Section E3: E2E — POST /api/tracer/run returns 200 and response shape
+
+**Single goal:** Verify that a valid `POST /api/tracer/run` returns 200 and a response body that matches the API contract (e.g. harness_change_set, improvement_metrics).
+
+### Completed work
+- Reused existing tracer API implementation and tests; no source code changes were required for this verification-only section.
+- Per iteration requirement, application had already been fully restarted from scratch before this section:
+  - `docker compose down -v --rmi all`
+  - `docker compose build`
+  - `docker compose up -d`
+- Executed live `POST /api/tracer/run` against Docker backend and validated response shape.
+
+### Codebase reuse/search notes (pre-change)
+- Reviewed endpoint implementation in `src/backend/routers/tracer.py`.
+- Reviewed existing API coverage in `src/backend/tests/api/test_tracer_run.py`.
+- Searched frontend/backend usage for `/api/tracer/run` to avoid duplicative changes.
+
+### Validation commands and outcomes
+- Live E2E request:
+  - `curl -s -o /tmp/e3_tracer_response.json -w '%{http_code}' -X POST http://localhost:8001/api/tracer/run -H 'Content-Type: application/json' -d '{"run_id":"e2e-run-1","limit":1,"max_runtime_seconds":30,"max_steps":1}'`
+  - Outcome: `200`.
+- Shape assertions:
+  - Parsed `/tmp/e3_tracer_response.json` with Python assertions.
+  - Outcome: response contains `harness_change_set` object and includes `improvement_metrics` key.
+  - Observed top-level keys: `fetched_trace_count`, `harness_change_set`, `improvement_metrics`, `loaded_trace_count`, `persisted_trace_count`, `run_id`, `target_repo_url`, `trace_ids`.
+- Required backend test for tracer API:
+  - `docker compose exec backend uv run pytest tests/api/test_tracer_run.py`
+  - Outcome: success (`5 passed in 2.44s`).
+- Runtime state check:
+  - `docker compose ps`
+  - Outcome: `db`, `backend`, `frontend`, `chrome` all `Up` (`db` healthy).
+
+### Useful logs captured
+- `docker compose logs --tail=200 backend`
+  - Includes live tracer run request served successfully: `"POST /api/tracer/run HTTP/1.1" 200 OK`.
+  - Includes expected warning in this environment: `Tracer deep-agent model credentials are missing; continuing with empty graph result`.
+- `docker compose logs --tail=120 frontend`
+  - Vite dev server ready (`VITE v7.3.1 ready`).
+- `docker compose logs --tail=120 db`
+  - PostgreSQL initialization complete and database ready to accept connections.
+
+### Notes
+- Containers changed only as part of the mandated fresh reboot before work; no code edits were made in this section, so no additional restart was required afterward.
