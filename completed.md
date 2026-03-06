@@ -363,3 +363,45 @@
 ### Notes
 - Main tracer orchestration now points to deep-agent by default.
 - In environments without model credentials, tracer run now degrades gracefully to an empty synthesized change set instead of failing the API request.
+
+## Section 10: Remove legacy LangGraph agent implementation
+
+**Single goal:** Remove or permanently gate the custom StateGraph tracer (build_tracer_graph and its graph nodes) so the codebase has a single implementation path: the deep-agent library.
+
+**Details:**
+- Delete or deprecate build_tracer_graph and all graph nodes/edges in langgraph_agent.py that are only used by the legacy path.
+- Keep shared pieces used by deep-agent (e.g. _synthesize_harness_changes if moved to a shared module, tracer_state, tracer_config, tracer_prompts, tracer_middleware helpers); remove only the legacy graph construction and routing.
+- No new features; deletion/gating only.
+
+### Completed work
+- Removed legacy StateGraph tracer implementation file `src/backend/agents/langgraph_agent.py`.
+- Removed legacy LangGraph-only tests file `src/backend/tests/agents/test_langgraph_agent.py`.
+- Updated `src/backend/tests/agents/test_tracer_middleware.py` to remove legacy `build_tracer_graph` import and graph-path verification test; retained direct middleware helper coverage.
+- Verified the backend now has no remaining references/imports to `build_tracer_graph`, `StateGraph`, or `agents.langgraph_agent`.
+
+### Validation commands and outcomes
+- `rg -n "build_tracer_graph|agents\\.langgraph_agent|from agents.langgraph_agent|StateGraph|should_continue" src/backend`
+  - Outcome: success (no matches).
+- `docker compose exec backend uv run pytest`
+  - Outcome: success (`59 passed in 4.45s`).
+- `curl -s -o /tmp/section10_backend_docs.html -w '%{http_code}\\n' http://localhost:8001/docs`
+  - Outcome: success (`200`).
+- `curl -s -o /tmp/section10_frontend.html -w '%{http_code}\\n' http://localhost:5174`
+  - Outcome: success (`200`).
+
+### Container restart/rebuild logs
+- Pre-task full clean restart (fresh builds/logs):
+  - `docker compose down -v --rmi all`
+  - `docker compose build`
+  - `docker compose up -d`
+- Post-change runtime refresh:
+  - `docker compose restart db backend frontend`
+- Running state check:
+  - `docker compose ps` -> `db`, `backend`, `frontend`, `chrome` all `Up` (`db` healthy).
+- Logs reviewed:
+  - `docker compose logs --no-color --tail=120 backend` -> Alembic context loaded, Uvicorn startup complete, reloads observed after file deletions, final server process running.
+  - `docker compose logs --no-color --tail=120 frontend` -> Vite dev server ready.
+  - `docker compose logs --no-color --tail=120 db` -> PostgreSQL ready to accept connections after restart.
+
+### Notes
+- Section 10 completed by removing the legacy custom LangGraph StateGraph path. The tracer now has a single implementation path through deep-agent (`build_deep_agent_tracer`).

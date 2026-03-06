@@ -3,7 +3,7 @@
 Tasks are in **recommended implementation order** (1…n). Each section = **one context window**.  
 Refactor existing implementation into a **deep-agent library in LangGraph**. Sections are atomic (one deliverable each).
 
-**Current section to work on:** Section 10.
+**Current section to work on:** Section 11.
 
 ---
 
@@ -223,8 +223,12 @@ Refactor existing implementation into a **deep-agent library in LangGraph**. Sec
 
 **How to test:** Unit or integration test: invoke deep-agent with state containing parallel_error_findings; assert result state includes harness_change_set conforming to HarnessChangeSet; test with no findings and assert no or empty change set.
 
-**Test results:** (Add when section is complete.)
-- Command and outcome.
+**Test results:**
+- `rg -n "build_tracer_graph|agents\\.langgraph_agent|from agents.langgraph_agent|StateGraph|should_continue" src/backend` -> no matches.
+- `docker compose exec backend uv run pytest` -> passed (`59 passed in 4.45s`).
+- `docker compose ps` -> `db`, `backend`, `frontend`, `chrome` all `Up` (`db` healthy).
+- `curl -s -o /tmp/section10_backend_docs.html -w '%{http_code}\n' http://localhost:8001/docs` -> `200`.
+- `curl -s -o /tmp/section10_frontend.html -w '%{http_code}\n' http://localhost:5174` -> `200`.
 
 ---
 

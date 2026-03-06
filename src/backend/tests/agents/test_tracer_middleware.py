@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from langchain_core.messages import AIMessage, SystemMessage
 
-from agents.langgraph_agent import build_tracer_graph
 from agents.tracer_middleware import (
     apply_loop_detection_injection,
     apply_time_budget_injection,
@@ -35,30 +34,6 @@ def test_build_pre_completion_checklist_message_contains_expected_content() -> N
     assert "run a concrete verification pass against the task spec" in checklist
     assert "run_id: run-verify" in checklist
     assert "current_trace_summary: Two failing spans in decomposition" in checklist
-
-
-def test_build_tracer_graph_forces_one_more_turn_for_verification_before_end() -> None:
-    call_count = 0
-
-    def model_invoke(state: dict[str, object], _: str, __: str) -> AIMessage:
-        nonlocal call_count
-        call_count += 1
-        if call_count == 1:
-            return AIMessage(content="Implementation complete.")
-
-        assert isinstance(state["messages"][-1], SystemMessage)
-        assert "Pre-completion verification checklist:" in str(state["messages"][-1].content)
-        return AIMessage(content="Verified via tests and ready to submit.")
-
-    graph = build_tracer_graph(model_invoke=model_invoke)
-    result = graph.invoke({"messages": [], "run_id": "run-verify-loop", "current_trace_summary": None})
-
-    assert call_count == 2
-    assert len(result["messages"]) == 3
-    assert result["messages"][0].content == "Implementation complete."
-    assert "Pre-completion verification checklist:" in str(result["messages"][1].content)
-    assert result["messages"][2].content == "Verified via tests and ready to submit."
-    assert result["pre_completion_verified"] is True
 
 
 def test_apply_time_budget_injection_emits_message_for_short_step_budget() -> None:
