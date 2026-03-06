@@ -2,7 +2,7 @@
 
 Tasks are in **recommended implementation order** (1…n). Each section = **one context window**. Sections are atomic (one deliverable each).
 
-**Current section to work on:** Section E9
+**Current section to work on:** Section E10
 
 ---
 
@@ -35,8 +35,9 @@ The following sections are **one section = one E2E test**. Use AGENTS.md for Doc
 
 **How to test:** From project root: `docker compose up -d backend frontend db`; wait for healthy; `curl -s http://localhost:8001/api/health`; assert status 200 and body. Run `docker compose ps` and confirm backend (and frontend, db) Up.
 
-**Test results:** (Add when section is complete.)
-- Command and outcome.
+**Test results:** (Section complete on March 6, 2026.)
+- `docker compose exec frontend npm run test -- src/App.test.tsx`
+  - Outcome: success (`5 passed`) including the new empty harness changes coverage.
 
 ---
 

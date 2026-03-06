@@ -1262,3 +1262,67 @@
 
 ### Notes
 - Section E8 complete.
+
+## Section E9: E2E (mocked) — Success with empty harness changes
+
+**Single goal:** Mock 200 with harness_change_set.harness_changes.length === 0 and summary like "No harness changes were synthesized." Assert UI shows "No harness changes were returned by this run." and no Improvement Metrics section.
+
+**Details:**
+- Mock response: harness_changes: [], summary: "No harness changes were synthesized by the tracer graph." (or equivalent), improvement_metrics: null.
+- Submit form; assert Completed; assert the empty-state hint text is visible; assert no "Improvement Metrics" heading. Ensures empty-result path does not break and matches backend contract.
+
+**Tech stack and dependencies**
+- Vitest, @testing-library/react. No new packages.
+
+**Files and purpose**
+
+| File | Purpose |
+|------|--------|
+| src/frontend/src/App.test.tsx | Added E9 test: empty harness changes and no metrics rendering. |
+
+### Completed work
+- Searched existing frontend tests and UI rendering paths for reuse before edits:
+  - `src/frontend/src/App.test.tsx`
+  - `src/frontend/src/App.tsx`
+- Added test `renders empty harness changes state and hides improvement metrics when none are returned` in `src/frontend/src/App.test.tsx`.
+- Mocked successful tracer response with:
+  - `harness_change_set.harness_changes: []`
+  - `harness_change_set.summary: "No harness changes were synthesized by the tracer graph."`
+  - `improvement_metrics: null`
+- Asserted UI shows:
+  - `Completed` job status
+  - run summary text for no synthesized harness changes
+  - empty-state hint `No harness changes were returned by this run.`
+  - no `Improvement Metrics` heading.
+
+### Validation commands and outcomes
+- Pre-task fresh restart/build:
+  - `docker compose down -v --rmi all && docker compose build && docker compose up -d`
+  - Outcome: success; fresh containers created.
+- Post-change service restart:
+  - `docker compose restart`
+  - Outcome: success; `db`, `backend`, `frontend`, and `chrome` restarted.
+- Section-targeted frontend test:
+  - `docker compose exec frontend npm run test -- src/App.test.tsx`
+  - Outcome: success (`1 passed file`, `5 passed tests`).
+- Required frontend test suite:
+  - `docker compose exec frontend npm run test`
+  - Outcome: success (`1 passed file`, `5 passed tests`).
+- Runtime state check:
+  - `docker compose ps`
+  - Outcome: `db`, `backend`, `frontend`, and `chrome` all `Up` (`db` healthy).
+
+### Useful logs captured
+- Frontend test logs:
+  - `Submitting tracer run request { runId: 'run-empty-1', traceIdCount: 0, targetRepoUrl: 'default' }`
+  - `Tracer run completed { runId: 'run-empty-1', harnessChangeCount: 0, metricsAvailable: false }`
+  - `✓ src/App.test.tsx (5 tests)` and `Tests 5 passed (5)`
+- `docker compose logs --no-color --tail=120 backend`
+  - Alembic migration context loaded; Uvicorn startup and application startup complete.
+- `docker compose logs --no-color --tail=120 frontend`
+  - Vite dev server started cleanly and ready on port 5173.
+- `docker compose logs --no-color --tail=120 db`
+  - PostgreSQL started and reported `database system is ready to accept connections`.
+
+### Notes
+- Section E9 complete.

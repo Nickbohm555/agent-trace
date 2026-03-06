@@ -141,6 +141,40 @@ describe("App tracer run UI", () => {
     expect(screen.getByText("Add deterministic retry guidance")).toBeTruthy();
   });
 
+  it("renders empty harness changes state and hides improvement metrics when none are returned", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        run_id: "run-empty-1",
+        target_repo_url: "https://example.com/repo.git",
+        trace_ids: [],
+        fetched_trace_count: 0,
+        persisted_trace_count: 0,
+        loaded_trace_count: 0,
+        harness_change_set: {
+          run_id: "run-empty-1",
+          trace_ids: [],
+          summary: "No harness changes were synthesized by the tracer graph.",
+          created_at: "2026-03-06T00:00:00Z",
+          harness_changes: [],
+        },
+        improvement_metrics: null,
+      }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    fireEvent.change(screen.getByLabelText("Run ID"), { target: { value: "run-empty-1" } });
+    fireEvent.click(screen.getByRole("button", { name: "Run Tracer" }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    expect(await screen.findByText("Completed")).toBeTruthy();
+    expect(screen.getByText("No harness changes were synthesized by the tracer graph.")).toBeTruthy();
+    expect(screen.getByText("No harness changes were returned by this run.")).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "Improvement Metrics" })).toBeNull();
+  });
+
   it("renders backend error message when run fails", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: false,
