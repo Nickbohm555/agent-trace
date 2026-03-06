@@ -91,3 +91,44 @@
 
 ### Notes
 - This section keeps deep-agent architecture intact and moves reasoning budget application directly into deep-agent model invocation path via middleware.
+
+## Section 4: Migrate pre-completion verification to deep-agent middleware
+
+**Single goal:** Before the tracer can finish, run a verification pass (remind agent to run tests and compare to spec) in the deep-agent path so the agent does not exit without testing.
+
+### Completed work
+- Added `TracerPreCompletionVerificationMiddleware` in `src/backend/agents/deep_agent_tracer.py`.
+- Wired middleware into `build_deep_agent_tracer(...)` middleware registration so the deep-agent loop enforces verification before final completion.
+- Middleware reuses existing helper logic from `src/backend/agents/tracer_middleware.py`:
+  - `should_inject_pre_completion_checklist(...)`
+  - `build_pre_completion_checklist_message(...)`
+- Implemented the check in `after_model` with `@hook_config(can_jump_to=["model"])` and state updates:
+  - appends a verification checklist `SystemMessage`,
+  - sets `pre_completion_verified=True`,
+  - sets `jump_to="model"` so one additional verification turn occurs.
+- Added explicit middleware logging:
+  - `"Injecting pre-completion verification checklist in deep-agent middleware"` with `run_id`.
+- Updated/expanded `tests/agents/test_deep_agent_tracer.py`:
+  - new test `test_build_deep_agent_tracer_injects_pre_completion_checklist_before_end`,
+  - adjusted existing tests to set `pre_completion_verified=True` when they are not testing this middleware behavior.
+
+### Validation commands and outcomes
+- `docker compose exec backend uv run pytest tests/agents/test_deep_agent_tracer.py`
+  - Outcome: success (`12 passed in 2.30s`).
+
+### Container restart/rebuild logs
+- Pre-task full clean restart (fresh builds/logs):
+  - `docker compose down -v --rmi all`
+  - `docker compose build`
+  - `docker compose up -d`
+- Post-change runtime refresh:
+  - `docker compose restart backend`
+  - `docker compose ps` -> `db`, `backend`, `frontend`, and `chrome` all `Up` (`db` healthy).
+- Post-change logs reviewed:
+  - `docker compose logs --no-color --tail=120 db backend frontend`
+  - Backend: Alembic context loaded, Uvicorn reloader/server startup complete, file-change reloads completed, service running.
+  - Frontend: Vite dev server ready.
+  - DB: PostgreSQL ready to accept connections.
+
+### Notes
+- Section 4 is complete and keeps deep-agent architecture intact while reusing existing checklist helper logic.

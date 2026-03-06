@@ -5,7 +5,7 @@ from typing import get_origin, get_type_hints
 
 import pytest
 from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
-from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 
 from agents import deep_agent_tracer
 from agents.deep_agent_tracer import build_deep_agent_tracer
@@ -39,7 +39,12 @@ def test_build_deep_agent_tracer_invokes_with_messages_state(monkeypatch: pytest
         )
     )
 
-    result = graph.invoke({"messages": [HumanMessage(content="Analyze this trace")]})
+    result = graph.invoke(
+        {
+            "messages": [HumanMessage(content="Analyze this trace")],
+            "pre_completion_verified": True,
+        }
+    )
 
     assert "messages" in result
     assert len(result["messages"]) >= 2
@@ -65,7 +70,7 @@ def test_build_deep_agent_tracer_propagates_tracer_state_fields(
         "reasoning_phase": "verification",
         "reasoning_level": "high",
         "reasoning_phase_levels": {"implementation": "medium"},
-        "pre_completion_verified": False,
+        "pre_completion_verified": True,
         "run_started_at_epoch_seconds": 123.0,
         "max_runtime_seconds": 120,
         "max_steps": 8,
@@ -91,7 +96,7 @@ def test_build_deep_agent_tracer_propagates_tracer_state_fields(
     assert result["reasoning_phase"] == "verification"
     assert result["reasoning_level"] == "high"
     assert result["reasoning_phase_levels"] == {"implementation": "medium"}
-    assert result["pre_completion_verified"] is False
+    assert result["pre_completion_verified"] is True
     assert result["run_started_at_epoch_seconds"] == 123.0
     assert result["max_runtime_seconds"] == 120
     assert result["max_steps"] == 8
@@ -106,6 +111,30 @@ def test_build_deep_agent_tracer_propagates_tracer_state_fields(
     assert result["parallel_analysis_completed"] is True
     assert result["harness_changes"] == []
     assert result["harness_change_set"] == {"run_id": "run-state-1", "harness_changes": []}
+
+
+def test_build_deep_agent_tracer_injects_pre_completion_checklist_before_end(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_bind_tools(monkeypatch)
+    graph = build_deep_agent_tracer(
+        model=FakeMessagesListChatModel(
+            responses=[
+                AIMessage(content="Implementation completed."),
+                AIMessage(content="Verification completed."),
+            ],
+        )
+    )
+
+    result = graph.invoke({"messages": [HumanMessage(content="Finish this task")]})
+
+    assert result["pre_completion_verified"] is True
+    assert any(
+        isinstance(message, SystemMessage)
+        and "Pre-completion verification checklist:" in str(message.content)
+        for message in result["messages"]
+    )
+    assert result["messages"][-1].content == "Verification completed."
 
 
 def test_build_deep_agent_tracer_uses_tracer_system_prompt(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -193,6 +222,7 @@ def test_build_deep_agent_tracer_executes_list_directory_tool(
         {
             "messages": [HumanMessage(content="Inspect files")],
             "sandbox_path": session.sandbox_path,
+            "pre_completion_verified": True,
         }
     )
 
@@ -242,6 +272,7 @@ def test_build_deep_agent_tracer_overrides_model_sandbox_path_with_state(
         {
             "messages": [HumanMessage(content="Inspect README in the active sandbox.")],
             "sandbox_path": active_session.sandbox_path,
+            "pre_completion_verified": True,
         }
     )
 
@@ -281,6 +312,7 @@ def test_build_deep_agent_tracer_injects_local_context_on_first_turn(
         {
             "messages": [HumanMessage(content="Inspect files")],
             "sandbox_path": session.sandbox_path,
+            "pre_completion_verified": True,
         }
     )
 
@@ -321,7 +353,12 @@ def test_build_deep_agent_tracer_blocks_sandbox_tool_without_state_sandbox_path(
     )
 
     with pytest.raises(ValueError, match="sandbox_path is required"):
-        graph.invoke({"messages": [HumanMessage(content="Inspect files")]})
+        graph.invoke(
+            {
+                "messages": [HumanMessage(content="Inspect files")],
+                "pre_completion_verified": True,
+            }
+        )
 
     sandbox_service.teardown_sandbox(session)
 
@@ -347,6 +384,7 @@ def test_build_deep_agent_tracer_applies_reasoning_budget_from_phase_defaults(
         {
             "messages": [HumanMessage(content="Analyze with verification effort")],
             "reasoning_phase": "verification",
+            "pre_completion_verified": True,
         }
     )
 
@@ -379,6 +417,7 @@ def test_build_deep_agent_tracer_reasoning_level_override_wins(
             "reasoning_phase": "planning",
             "reasoning_level": "medium",
             "reasoning_phase_levels": {"planning": "high"},
+            "pre_completion_verified": True,
         }
     )
 

@@ -5,7 +5,7 @@ from typing import Any, Mapping, get_type_hints
 
 from deepagents import create_deep_agent
 from langchain.agents.middleware import AgentMiddleware
-from langchain.agents.middleware.types import ModelRequest
+from langchain.agents.middleware.types import ModelRequest, hook_config
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import SystemMessage, ToolMessage
 from langchain_core.tools import BaseTool
@@ -19,6 +19,10 @@ from agents.tracer_config import (
     resolve_reasoning_phase,
 )
 from agents.tracer_context import build_local_context_message, contains_local_context_message
+from agents.tracer_middleware import (
+    build_pre_completion_checklist_message,
+    should_inject_pre_completion_checklist,
+)
 from agents.tracer_prompts import build_tracer_system_prompt
 from agents.tracer_state import TracerState
 from services.sandbox_service import SandboxService
@@ -195,6 +199,27 @@ class TracerReasoningBudgetMiddleware(AgentMiddleware[TracerState, Any, Any]):
         return resolved_levels
 
 
+class TracerPreCompletionVerificationMiddleware(AgentMiddleware[TracerState, Any, Any]):
+    """Force one verification turn before allowing deep-agent completion."""
+
+    @hook_config(can_jump_to=["model"])
+    def after_model(self, state: TracerState, runtime: Any) -> dict[str, Any] | None:
+        del runtime
+        if not should_inject_pre_completion_checklist(state):
+            return None
+
+        checklist_message = build_pre_completion_checklist_message(state)
+        logger.info(
+            "Injecting pre-completion verification checklist in deep-agent middleware",
+            extra={"run_id": state.get("run_id")},
+        )
+        return {
+            "messages": [SystemMessage(content=checklist_message)],
+            "pre_completion_verified": True,
+            "jump_to": "model",
+        }
+
+
 def _build_tracer_tools(
     *,
     trace_storage_service: TraceStorageService | None,
@@ -256,5 +281,6 @@ def build_deep_agent_tracer(
             TracerLocalContextMiddleware(sandbox_service=sandbox_service),
             TracerSandboxScopeMiddleware(),
             TracerReasoningBudgetMiddleware(reasoning_config=reasoning_config),
+            TracerPreCompletionVerificationMiddleware(),
         ],
     )

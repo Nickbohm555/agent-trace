@@ -3,7 +3,7 @@
 Tasks are in **recommended implementation order** (1…n). Each section = **one context window**.  
 Refactor existing implementation into a **deep-agent library in LangGraph**. Sections are atomic (one deliverable each).
 
-**Current section to work on:** Section 4.
+**Current section to work on:** Section 5.
 
 ---
 
@@ -112,8 +112,8 @@ Refactor existing implementation into a **deep-agent library in LangGraph**. Sec
 
 **How to test:** Unit test: run deep-agent graph until it would end; assert verification message is injected and one more turn occurs before END; assert `pre_completion_verified` set.
 
-**Test results:** (Add when section is complete.)
-- Command and outcome.
+**Test results:**
+- `docker compose exec backend uv run pytest tests/agents/test_deep_agent_tracer.py` -> passed (`12 passed in 2.30s`).
 
 ---
 
