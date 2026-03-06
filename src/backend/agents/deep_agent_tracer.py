@@ -7,7 +7,7 @@ from deepagents import create_deep_agent
 from langchain.agents.middleware import AgentMiddleware
 from langchain.agents.middleware.types import ModelRequest, hook_config
 from langchain_core.language_models.chat_models import BaseChatModel
-from langchain_core.messages import SystemMessage, ToolMessage
+from langchain_core.messages import AIMessage, SystemMessage, ToolMessage
 from langchain_core.tools import BaseTool
 from langgraph.prebuilt.tool_node import ToolCallRequest
 
@@ -20,6 +20,7 @@ from agents.tracer_config import (
 )
 from agents.tracer_context import build_local_context_message, contains_local_context_message
 from agents.tracer_middleware import (
+    apply_loop_detection_injection,
     apply_time_budget_injection,
     build_pre_completion_checklist_message,
     should_inject_pre_completion_checklist,
@@ -238,6 +239,35 @@ class TracerPreCompletionVerificationMiddleware(AgentMiddleware[TracerState, Any
         }
 
 
+class TracerLoopDetectionMiddleware(AgentMiddleware[TracerState, Any, Any]):
+    """Track repeated edit_file tool calls and inject anti-loop guidance."""
+
+    def after_model(self, state: TracerState, runtime: Any) -> dict[str, Any] | None:
+        del runtime
+        messages = list(state.get("messages", []))
+        if not messages or not isinstance(messages[-1], AIMessage):
+            return None
+
+        updated_state, loop_message = apply_loop_detection_injection(
+            state,
+            response=messages[-1],
+        )
+        updates: dict[str, Any] = {
+            "edit_file_counts": updated_state.get("edit_file_counts", {}),
+            "loop_detection_nudged_files": updated_state.get("loop_detection_nudged_files", []),
+        }
+        if loop_message is not None:
+            updates["messages"] = [loop_message]
+            logger.info(
+                "Injected deep-agent loop-detection notice",
+                extra={
+                    "run_id": state.get("run_id"),
+                    "nudged_files": updates["loop_detection_nudged_files"],
+                },
+            )
+        return updates
+
+
 def _build_tracer_tools(
     *,
     trace_storage_service: TraceStorageService | None,
@@ -300,6 +330,7 @@ def build_deep_agent_tracer(
             TracerSandboxScopeMiddleware(),
             TracerTimeBudgetMiddleware(),
             TracerReasoningBudgetMiddleware(reasoning_config=reasoning_config),
+            TracerLoopDetectionMiddleware(),
             TracerPreCompletionVerificationMiddleware(),
         ],
     )

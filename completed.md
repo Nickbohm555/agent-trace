@@ -176,3 +176,37 @@
 ### Notes
 - Section 5 is complete and keeps deep-agent architecture intact by reusing existing time-budget helper logic via middleware.
 - The fresh-rebuild compatibility fix for `TracerState.messages` was necessary to keep deep-agent built-in summarization middleware stable.
+
+## Section 6: Migrate loop-detection to deep-agent middleware
+
+**Single goal:** Track per-file edit counts and, after N edits to the same file, inject a “reconsider your approach” nudge in the deep-agent path to avoid doom loops.
+
+### Completed work
+- Added `TracerLoopDetectionMiddleware` to `src/backend/agents/deep_agent_tracer.py`.
+- Wired the middleware into `build_deep_agent_tracer(...)` middleware registration.
+- Middleware now inspects the most recent model `AIMessage` tool calls and reuses `apply_loop_detection_injection(...)` from `src/backend/agents/tracer_middleware.py`.
+- Middleware updates deep-agent state keys:
+  - `edit_file_counts`
+  - `loop_detection_nudged_files`
+- When threshold is reached, middleware appends the generated loop-detection `SystemMessage` and logs an info event with `run_id` and nudged files.
+- Added unit test `test_build_deep_agent_tracer_injects_loop_detection_notice_for_repeated_edits` in `src/backend/tests/agents/test_deep_agent_tracer.py` to trigger repeated `edit_file` calls and assert nudge injection/state updates.
+
+### Validation commands and outcomes
+- `docker compose exec backend uv run pytest tests/agents/test_deep_agent_tracer.py`
+  - Outcome: success (`14 passed in 3.27s`).
+
+### Container restart/rebuild logs
+- Pre-task full clean restart (fresh builds/logs):
+  - `docker compose down -v --rmi all`
+  - `docker compose build`
+  - `docker compose up -d`
+- Post-change runtime refresh:
+  - `docker compose restart backend`
+  - `docker compose ps` -> `db`, `backend`, `frontend`, and `chrome` all `Up` (`db` healthy).
+- Post-change logs reviewed:
+  - `docker compose logs --tail=120 backend` -> Alembic context + Uvicorn startup complete, reload after file changes, final server process running.
+  - `docker compose logs --tail=120 frontend` -> Vite dev server ready.
+  - `docker compose logs --tail=120 db` -> PostgreSQL ready to accept connections.
+
+### Notes
+- Section 6 is complete and reuses existing loop-detection helper logic without changing tool contracts or API shape.

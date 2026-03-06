@@ -3,7 +3,7 @@
 Tasks are in **recommended implementation order** (1…n). Each section = **one context window**.  
 Refactor existing implementation into a **deep-agent library in LangGraph**. Sections are atomic (one deliverable each).
 
-**Current section to work on:** Section 6.
+**Current section to work on:** Section 7.
 
 ---
 

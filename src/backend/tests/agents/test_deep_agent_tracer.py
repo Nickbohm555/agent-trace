@@ -164,6 +164,71 @@ def test_build_deep_agent_tracer_injects_time_budget_warning_and_updates_step_co
     )
 
 
+def test_build_deep_agent_tracer_injects_loop_detection_notice_for_repeated_edits(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_bind_tools(monkeypatch)
+    _mock_clone_to_local_repo(monkeypatch)
+    sandbox_service = SandboxService(default_target_repo_url="https://example.com/default.git")
+    session = sandbox_service.create_sandbox(SandboxCreateRequest())
+
+    graph = build_deep_agent_tracer(
+        model=FakeMessagesListChatModel(
+            responses=[
+                AIMessage(
+                    content="First edit",
+                    tool_calls=[
+                        {
+                            "name": "edit_file",
+                            "args": {
+                                "sandbox_path": session.sandbox_path,
+                                "path": "src/app.py",
+                                "content": "print('first')\n",
+                            },
+                            "id": "tc-edit-1",
+                        }
+                    ],
+                ),
+                AIMessage(
+                    content="Second edit",
+                    tool_calls=[
+                        {
+                            "name": "edit_file",
+                            "args": {
+                                "sandbox_path": session.sandbox_path,
+                                "path": "src/app.py",
+                                "content": "print('second')\n",
+                            },
+                            "id": "tc-edit-2",
+                        }
+                    ],
+                ),
+                AIMessage(content="Edits complete."),
+            ],
+        ),
+        sandbox_service=sandbox_service,
+    )
+
+    result = graph.invoke(
+        {
+            "messages": [HumanMessage(content="Apply edits carefully")],
+            "sandbox_path": session.sandbox_path,
+            "pre_completion_verified": True,
+            "loop_detection_threshold": 2,
+        }
+    )
+
+    assert result["edit_file_counts"] == {"src/app.py": 2}
+    assert result["loop_detection_nudged_files"] == ["src/app.py"]
+    assert any(
+        isinstance(message, SystemMessage) and "Loop detection notice:" in str(message.content)
+        for message in result["messages"]
+    )
+    assert result["messages"][-1].content == "Edits complete."
+
+    sandbox_service.teardown_sandbox(session)
+
+
 def test_build_deep_agent_tracer_uses_tracer_system_prompt(monkeypatch: pytest.MonkeyPatch) -> None:
     captured: dict[str, object] = {}
 
