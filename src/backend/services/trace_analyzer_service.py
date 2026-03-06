@@ -7,8 +7,14 @@ from typing import Any, Callable
 
 from agents.langgraph_agent import build_tracer_graph
 from schemas.harness_changes import HarnessChangeSet
+from schemas.improvement_metrics import ImprovementMetrics
 from schemas.sandbox import SandboxCreateRequest, SandboxSession
 from schemas.trace import NormalizedTrace, TraceQueryFilters, TraceStorageQuery
+from services.improvement_metrics_service import (
+    EvaluationCommandConfig,
+    ImprovementMetricsRequest,
+    ImprovementMetricsService,
+)
 from services.langfuse_trace_service import LangfuseTraceService
 from services.sandbox_service import SandboxService
 from services.trace_storage_service import TraceStorageService
@@ -28,6 +34,9 @@ class TraceAnalyzerRequest:
     to_timestamp: datetime | None = None
     limit: int = 50
     environment: str | None = None
+    evaluation_command: list[str] | None = None
+    evaluation_cwd: str | None = None
+    evaluation_timeout_seconds: int = 900
 
 
 @dataclass(frozen=True)
@@ -39,6 +48,7 @@ class TraceAnalyzerResult:
     persisted_trace_count: int
     loaded_trace_count: int
     harness_change_set: HarnessChangeSet
+    improvement_metrics: ImprovementMetrics | None = None
 
 
 @dataclass
@@ -48,6 +58,7 @@ class TraceAnalyzerService:
     langfuse_trace_service: LangfuseTraceService
     trace_storage_service: TraceStorageService
     sandbox_service: SandboxService
+    improvement_metrics_service: ImprovementMetricsService | None = None
     graph_builder: GraphBuilder = build_tracer_graph
 
     def analyze(self, request: TraceAnalyzerRequest) -> TraceAnalyzerResult:
@@ -88,22 +99,41 @@ class TraceAnalyzerService:
             )
 
         sandbox_session: SandboxSession | None = None
+        improvement_metrics: ImprovementMetrics | None = None
         try:
             sandbox_session = self.sandbox_service.create_sandbox(
                 SandboxCreateRequest(target_repo_url=request.target_repo_url)
             )
-            tracer_graph = self.graph_builder(
-                trace_storage_service=self.trace_storage_service,
-                sandbox_service=self.sandbox_service,
-            )
-            graph_result = tracer_graph.invoke(
-                {
-                    "messages": [],
-                    "run_id": request.run_id,
-                    "sandbox_path": sandbox_session.sandbox_path,
-                    "pre_completion_verified": True,
-                }
-            )
+            graph_result: dict[str, Any] = {}
+            if request.evaluation_command:
+                metrics_service = self.improvement_metrics_service or ImprovementMetricsService(
+                    sandbox_service=self.sandbox_service
+                )
+                graph_result_holder: dict[str, dict[str, Any]] = {}
+
+                def run_tracer_between_evaluations() -> None:
+                    graph_result_holder["value"] = self._invoke_tracer_graph(
+                        run_id=request.run_id,
+                        sandbox_session=sandbox_session,
+                    )
+
+                improvement_metrics = metrics_service.measure_improvement(
+                    ImprovementMetricsRequest(
+                        sandbox_session=sandbox_session,
+                        baseline=EvaluationCommandConfig(
+                            command=request.evaluation_command,
+                            cwd=request.evaluation_cwd,
+                            timeout_seconds=request.evaluation_timeout_seconds,
+                        ),
+                    ),
+                    between_runs=run_tracer_between_evaluations,
+                )
+                graph_result = graph_result_holder.get("value", {})
+            else:
+                graph_result = self._invoke_tracer_graph(
+                    run_id=request.run_id,
+                    sandbox_session=sandbox_session,
+                )
             harness_change_set = self._build_change_set_from_graph_result(
                 graph_result=graph_result,
                 run_id=request.run_id,
@@ -121,6 +151,7 @@ class TraceAnalyzerService:
                 "persisted_trace_count": persisted_trace_count,
                 "loaded_trace_count": len(loaded_traces),
                 "harness_change_count": len(harness_change_set.harness_changes),
+                "improvement_metrics_available": improvement_metrics is not None,
             },
         )
 
@@ -132,6 +163,26 @@ class TraceAnalyzerService:
             persisted_trace_count=persisted_trace_count,
             loaded_trace_count=len(loaded_traces),
             harness_change_set=harness_change_set,
+            improvement_metrics=improvement_metrics,
+        )
+
+    def _invoke_tracer_graph(
+        self,
+        *,
+        run_id: str,
+        sandbox_session: SandboxSession,
+    ) -> dict[str, Any]:
+        tracer_graph = self.graph_builder(
+            trace_storage_service=self.trace_storage_service,
+            sandbox_service=self.sandbox_service,
+        )
+        return tracer_graph.invoke(
+            {
+                "messages": [],
+                "run_id": run_id,
+                "sandbox_path": sandbox_session.sandbox_path,
+                "pre_completion_verified": True,
+            }
         )
 
     @staticmethod

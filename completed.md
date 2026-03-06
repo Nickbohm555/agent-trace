@@ -811,3 +811,60 @@
 **Operational note:**
 - Changed container: `backend`.
 - Restarted `backend` with `docker compose restart backend` after implementation and verified `backend`, `frontend`, and `db` logs.
+
+## Section 20: Run comparison and improvement metrics (boosting)
+
+**Depends on:** Sections 3 (sandbox), 9 (run_command). Optional: Section 19 if orchestration triggers metrics.
+
+**Single goal:** After the tracer suggests changes and (optionally) applies them in the sandbox, run the target agent or its tests and compare outcome to baseline to measure improvement (boosting).
+
+**Deep-agent capability:** Boosting / improvement measurement — baseline vs post-change metrics (e.g. tests_passed_before/after, delta); harness improvement signal.
+
+**Details implemented:**
+- Added `src/backend/schemas/improvement_metrics.py` with strict Pydantic models for:
+  - Per-run command evaluation metrics (`EvaluationRunMetrics`).
+  - Before/after delta payload (`ImprovementDelta`).
+  - Aggregate boosting result (`ImprovementMetrics`, with `improved` flag).
+- Added `src/backend/services/improvement_metrics_service.py`:
+  - Runs baseline and post-change commands in sandbox using existing `SandboxService.run_command`.
+  - Supports an optional `between_runs` callback so tracer changes can be applied between baseline and post-change evaluation.
+  - Parses common test count tokens (`passed`, `failed`, `skipped`) from command output and computes deltas plus score delta.
+  - Emits visibility logs at start/end with command and improvement metadata.
+- Integrated optional boosting into `src/backend/services/trace_analyzer_service.py`:
+  - Extended `TraceAnalyzerRequest` with optional `evaluation_command`, `evaluation_cwd`, and `evaluation_timeout_seconds`.
+  - Extended `TraceAnalyzerResult` with optional `improvement_metrics`.
+  - When `evaluation_command` is provided, orchestrates: baseline evaluation -> tracer graph invocation -> post-change evaluation.
+  - Keeps existing non-boosting flow unchanged when no evaluation command is supplied.
+  - Added completion log field `improvement_metrics_available`.
+- Added/updated tests:
+  - `src/backend/tests/services/test_improvement_metrics_service.py` for unit-level delta computation and fallback behavior when outputs do not include test counters.
+  - `src/backend/tests/services/test_trace_analyzer_service.py` to validate:
+    - Existing orchestration still works without metrics.
+    - Metrics path executes baseline/graph/post-change in expected order and returns structured boosting data.
+
+**Test results:**
+- `docker compose exec backend uv run pytest tests/services/test_improvement_metrics_service.py tests/services/test_trace_analyzer_service.py`
+- Result: `4 passed in 1.15s` on 2026-03-06.
+
+**Useful logs (2026-03-06):**
+- Container state (`docker compose ps`):
+  - `backend` up on `0.0.0.0:8001->8000/tcp`
+  - `frontend` up on `0.0.0.0:5174->5173/tcp`
+  - `db` healthy on `0.0.0.0:5433->5432/tcp`
+  - `chrome` up on `0.0.0.0:9223->3000/tcp`
+- Backend logs (`docker compose logs --tail=120 backend`):
+  - `INFO: Uvicorn running on http://0.0.0.0:8000`
+  - `INFO: Application startup complete.`
+  - `INFO: ... "GET /docs HTTP/1.1" 200 OK`
+  - `WARNING: WatchFiles detected changes ... Reloading...` (expected during iterative edits)
+- Frontend logs (`docker compose logs --tail=80 frontend`):
+  - `VITE v7.3.1 ready`
+  - `Local: http://localhost:5173/`
+- DB logs (`docker compose logs --tail=80 db`):
+  - `database system is ready to accept connections`
+- Backend readiness:
+  - `curl -s -o /dev/null -w "%{http_code}" http://localhost:8001/docs` returned `200`.
+
+**Operational note:**
+- Changed container: `backend`.
+- Restarted backend with `docker compose restart backend` and reviewed backend/frontend/db logs.
