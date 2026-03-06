@@ -118,6 +118,7 @@ class TraceAnalyzerService:
                     graph_result_holder["value"] = self._invoke_tracer_graph(
                         run_id=request.run_id,
                         sandbox_session=sandbox_session,
+                        traces=loaded_traces,
                         max_runtime_seconds=request.max_runtime_seconds,
                         max_steps=request.max_steps,
                     )
@@ -138,6 +139,7 @@ class TraceAnalyzerService:
                 graph_result = self._invoke_tracer_graph(
                     run_id=request.run_id,
                     sandbox_session=sandbox_session,
+                    traces=loaded_traces,
                     max_runtime_seconds=request.max_runtime_seconds,
                     max_steps=request.max_steps,
                 )
@@ -184,6 +186,7 @@ class TraceAnalyzerService:
         *,
         run_id: str,
         sandbox_session: SandboxSession,
+        traces: list[NormalizedTrace],
         max_runtime_seconds: int | None = None,
         max_steps: int | None = None,
     ) -> dict[str, Any]:
@@ -191,9 +194,12 @@ class TraceAnalyzerService:
             trace_storage_service=self.trace_storage_service,
             sandbox_service=self.sandbox_service,
         )
+        trace_ids = [trace.trace_id for trace in traces]
         graph_state: dict[str, Any] = {
             "messages": [],
             "run_id": run_id,
+            "trace_ids": trace_ids,
+            "current_trace_summary": self._build_current_trace_summary(run_id=run_id, trace_ids=trace_ids),
             "sandbox_path": sandbox_session.sandbox_path,
             "pre_completion_verified": True,
         }
@@ -206,6 +212,8 @@ class TraceAnalyzerService:
             extra={
                 "run_id": run_id,
                 "sandbox_path": sandbox_session.sandbox_path,
+                "trace_id_count": len(trace_ids),
+                "has_trace_summary": bool(graph_state.get("current_trace_summary")),
                 "has_max_runtime_seconds": max_runtime_seconds is not None,
                 "has_max_steps": max_steps is not None,
             },
@@ -232,6 +240,16 @@ class TraceAnalyzerService:
             },
         )
         return coerced_result
+
+    @staticmethod
+    def _build_current_trace_summary(*, run_id: str, trace_ids: list[str]) -> str:
+        if not trace_ids:
+            return f"run_id {run_id}: no persisted traces were loaded for analysis."
+
+        preview = ", ".join(trace_ids[:3])
+        if len(trace_ids) > 3:
+            preview = f"{preview}, +{len(trace_ids) - 3} more"
+        return f"run_id {run_id}: loaded {len(trace_ids)} trace(s): {preview}."
 
     @staticmethod
     def _coerce_traces_to_run_id(traces: list[NormalizedTrace], *, run_id: str) -> list[NormalizedTrace]:

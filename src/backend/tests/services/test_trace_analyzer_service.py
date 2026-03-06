@@ -136,6 +136,8 @@ def test_trace_analyzer_orchestrates_fetch_store_analyze_and_synthesize_in_order
             def invoke(self, state):
                 steps.append("graph_invoke")
                 assert state["run_id"] == "run-123"
+                assert state["trace_ids"] == ["trace-1"]
+                assert state["current_trace_summary"] == "run_id run-123: loaded 1 trace(s): trace-1."
                 assert state["sandbox_path"] == "/tmp/sandbox-1"
                 return {
                     "harness_change_set": HarnessChangeSet(
@@ -203,6 +205,8 @@ def test_trace_analyzer_runs_boosting_metrics_when_evaluation_command_is_provide
             def invoke(self, state):
                 steps.append("graph_invoke")
                 assert state["run_id"] == "run-123"
+                assert state["trace_ids"] == ["trace-1"]
+                assert state["current_trace_summary"] == "run_id run-123: loaded 1 trace(s): trace-1."
                 return {
                     "harness_change_set": HarnessChangeSet(
                         run_id="run-123",

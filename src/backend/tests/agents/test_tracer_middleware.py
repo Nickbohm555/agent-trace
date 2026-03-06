@@ -26,6 +26,7 @@ def test_build_pre_completion_checklist_message_contains_expected_content() -> N
     checklist = build_pre_completion_checklist_message(
         {
             "run_id": "run-verify",
+            "trace_ids": ["trace-1", "trace-2"],
             "current_trace_summary": "Two failing spans in decomposition",
         }
     )
@@ -33,7 +34,20 @@ def test_build_pre_completion_checklist_message_contains_expected_content() -> N
     assert "Pre-completion verification checklist:" in checklist
     assert "run a concrete verification pass against the task spec" in checklist
     assert "run_id: run-verify" in checklist
+    assert "trace_ids: trace-1, trace-2" in checklist
     assert "current_trace_summary: Two failing spans in decomposition" in checklist
+
+
+def test_build_pre_completion_checklist_message_includes_task_spec_when_available() -> None:
+    checklist = build_pre_completion_checklist_message(
+        {
+            "run_id": "run-spec",
+            "task_spec_snippet": "Implement endpoint contract exactly as requested.",
+        }
+    )
+
+    assert "run_id: run-spec" in checklist
+    assert "task_spec_snippet: Implement endpoint contract exactly as requested." in checklist
 
 
 def test_apply_time_budget_injection_emits_message_for_short_step_budget() -> None:

@@ -347,7 +347,12 @@ class TracerPreCompletionVerificationMiddleware(AgentMiddleware[TracerState, Any
         checklist_message = build_pre_completion_checklist_message(state)
         logger.info(
             "Injecting pre-completion verification checklist in deep-agent middleware",
-            extra={"run_id": state.get("run_id")},
+            extra={
+                "run_id": state.get("run_id"),
+                "trace_id_count": len(state.get("trace_ids", [])),
+                "has_trace_summary": bool(state.get("current_trace_summary")),
+                "has_task_spec_snippet": bool(state.get("task_spec_snippet")),
+            },
         )
         return {
             "messages": [SystemMessage(content=checklist_message)],

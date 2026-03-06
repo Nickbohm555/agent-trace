@@ -25,9 +25,15 @@ _PRE_COMPLETION_CHECKLIST = "\n".join(
 def build_pre_completion_checklist_message(state: TracerState) -> str:
     run_id = state.get("run_id", "unknown")
     trace_summary = state.get("current_trace_summary")
+    task_spec_snippet = state.get("task_spec_snippet")
+    trace_ids = state.get("trace_ids") or []
     extra_lines = [f"- run_id: {run_id}"]
+    if trace_ids:
+        extra_lines.append(f"- trace_ids: {', '.join(trace_ids)}")
     if trace_summary:
         extra_lines.append(f"- current_trace_summary: {trace_summary}")
+    if task_spec_snippet:
+        extra_lines.append(f"- task_spec_snippet: {task_spec_snippet}")
     return "\n".join([_PRE_COMPLETION_CHECKLIST, *extra_lines])
 
 

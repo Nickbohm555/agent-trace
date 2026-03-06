@@ -808,3 +808,62 @@
 ### Notes
 - Apply transitions now occur only through explicit approve action unless `TRACER_AUTO_APPLY_CHANGES` is enabled.
 - The live tracer run used for sanity checks logged expected fallback behavior when model credentials are missing, but API proposal/approval flow completed successfully.
+
+## Section 7: Pre-completion verification and deterministic context
+
+**Single goal:** Document the existing pre-completion verification loop and optionally inject deterministic context (e.g. task spec or trace summary) into the verification checklist so agents verify against the spec.
+
+**Details:**
+- `TracerPreCompletionVerificationMiddleware` and build-verify-fix prompts already exist. This section: (1) Document in completed.md or docs how the verification loop works (plan → build → verify → fix; PreCompletionChecklistMiddleware forces a verification turn before exit). (2) Optionally harden by ensuring deterministic context (e.g. `current_trace_summary`, task spec snippet, or run_id) is always available and included in `build_pre_completion_checklist_message` when present in state.
+- Do not remove or replace the existing middleware; only document and optionally extend context injection.
+
+### Completed work
+- Documented and preserved the existing pre-completion verification loop:
+  - Main tracer prompt keeps explicit plan/build/verify/fix guidance.
+  - `TracerPreCompletionVerificationMiddleware` still forces one verification turn before completion by injecting the pre-completion checklist and jumping back to model execution.
+- Hardened deterministic context injection for checklist generation:
+  - Updated `src/backend/agents/tracer_middleware.py` so `build_pre_completion_checklist_message(...)` includes, when present:
+    - `run_id`
+    - `trace_ids`
+    - `current_trace_summary`
+    - `task_spec_snippet`
+- Extended tracer state contract in `src/backend/agents/tracer_state.py`:
+  - Added optional `trace_ids` and `task_spec_snippet` fields.
+- Injected deterministic trace context at tracer graph invocation in `src/backend/services/trace_analyzer_service.py`:
+  - Graph state now includes `trace_ids` and a deterministic `current_trace_summary` generated from loaded traces.
+  - Added `_build_current_trace_summary(...)` helper for stable summary formatting.
+  - Added visibility logs when invoking graph (`trace_id_count`, `has_trace_summary`).
+- Added visibility logs in pre-completion middleware in `src/backend/agents/deep_agent_tracer.py`:
+  - Checklist injection log now includes `trace_id_count`, `has_trace_summary`, and `has_task_spec_snippet`.
+- Added/updated unit tests:
+  - `src/backend/tests/agents/test_tracer_middleware.py`
+    - verifies checklist includes trace IDs.
+    - verifies checklist includes task spec snippet when provided.
+  - `src/backend/tests/services/test_trace_analyzer_service.py`
+    - verifies tracer graph state now includes deterministic `trace_ids` and `current_trace_summary`.
+
+### Validation commands and outcomes
+- `docker compose exec backend uv run pytest tests/agents/test_tracer_middleware.py tests/agents/test_deep_agent_tracer.py -k pre_completion`
+  - Outcome: success (`4 passed, 27 deselected in 1.84s`).
+- `docker compose exec backend uv run pytest tests/services/test_trace_analyzer_service.py`
+  - Outcome: success (`4 passed in 1.27s`).
+
+### Container restart/rebuild logs
+- Pre-task full clean restart (fresh builds/logs):
+  - `docker compose down -v --rmi all`
+  - `docker compose build`
+  - `docker compose up -d`
+- Post-change refresh (changed container scope: backend-only code + backend tests):
+  - `docker compose restart backend`
+- Running state check:
+  - `docker compose ps` -> `db`, `backend`, `frontend`, `chrome` all `Up` (`db` healthy).
+- Logs reviewed:
+  - `docker compose logs --tail=160 backend` -> alembic + uvicorn startup complete, watch reloads after edited files, final server process healthy.
+  - `docker compose logs --tail=120 frontend` -> Vite dev server ready on port 5173 (host mapped 5174).
+  - `docker compose logs --tail=120 db` -> PostgreSQL ready to accept connections.
+- Readiness checks:
+  - `curl -I http://localhost:8001/docs` -> `HTTP/1.1 200 OK`.
+  - `curl -I http://localhost:5174` -> `HTTP/1.1 200 OK`.
+
+### Notes
+- Section 7 is complete. The verification middleware remains the primary enforcement mechanism, and checklist prompts now carry deterministic context from tracer state when available.

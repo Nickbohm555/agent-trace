@@ -14,6 +14,8 @@ class TracerState(TypedDict, total=False):
 
     messages: Annotated[list[AnyMessage], add_messages]
     current_trace_summary: str | None
+    task_spec_snippet: str | None
+    trace_ids: list[str]
     run_id: str
     sandbox_path: str
     local_context: str
