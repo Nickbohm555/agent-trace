@@ -635,3 +635,54 @@
 
 ### Notes
 - Section 3 is complete with an agent-authored synthesis mechanism (tool path) while preserving rule-based synthesis fallback for continuity.
+
+## Section 4: Synthesis prompts and removal of rule-based synthesis middleware
+
+**Single goal:** Add synthesis instructions to the main agent and remove or bypass rule-based synthesis middleware so only the main agent produces the harness change set.
+
+**Details:**
+- Add prompt text in `tracer_prompts.py` so the main agent knows when and how to produce harness change suggestions from findings (e.g. when to call the synthesis tool or how to fill the synthesis step).
+- Remove or bypass `TracerHarnessSynthesisMiddleware` (or equivalent) that calls `synthesize_harness_changes_from_findings`; ensure no code path overwrites the agent-produced `harness_change_set` with rule-based output. Keep or archive `harness_change_synthesis.py` as reference/fallback only if needed.
+
+### Completed work
+- Updated `src/backend/agents/tracer_prompts.py` with a dedicated **Harness synthesis phase** that instructs the main tracer agent to:
+  - synthesize from `parallel_error_findings` only,
+  - call `propose_harness_changes` exactly once,
+  - include `run_id` + impacted `trace_ids`,
+  - keep proposed `harness_changes` concrete/testable,
+  - avoid fabricating suggestions when findings are missing/insufficient.
+- Updated `src/backend/agents/deep_agent_tracer.py` to remove rule-based fallback synthesis from `TracerHarnessSynthesisMiddleware`.
+  - The middleware now only captures model-authored `propose_harness_changes` tool payloads.
+  - Removed import/use of `synthesize_harness_changes_from_findings` from active middleware path.
+- Kept `src/backend/agents/harness_change_synthesis.py` as reference-only code (no longer used in the primary synthesis path).
+- Updated tests:
+  - `src/backend/tests/agents/test_deep_agent_tracer.py`
+    - replaced fallback synthesis test with `test_build_deep_agent_tracer_does_not_synthesize_harness_change_set_without_model_tool_call`.
+  - `src/backend/tests/agents/test_tracer_prompts.py`
+    - added assertions for synthesis instructions and tool-call contract in the system prompt.
+
+### Validation commands and outcomes
+- `docker compose exec backend uv run pytest tests/agents/test_deep_agent_tracer.py tests/agents/test_tracer_prompts.py`
+  - Outcome: success (`24 passed in 7.95s`).
+- `docker compose exec backend uv run pytest tests/api/test_tracer_run.py`
+  - Outcome: success (`3 passed in 2.94s`).
+- `curl -s -o /dev/null -w "%{http_code}\\n" http://localhost:8001/docs`
+  - First outcome: `000` during backend restart window.
+  - Follow-up after restart stabilization: success (`200`).
+
+### Container restart/rebuild logs
+- Pre-task full clean restart (fresh builds/logs):
+  - `docker compose down -v --rmi all`
+  - `docker compose build`
+  - `docker compose up -d`
+- Post-change refresh (changed container scope: backend code + backend tests):
+  - `docker compose restart backend`
+- Running state check:
+  - `docker compose ps` -> `db`, `backend`, `frontend`, `chrome` all `Up` (`db` healthy).
+- Logs reviewed:
+  - `docker compose logs --tail=120 backend` -> uvicorn startup complete, watch reloads after tracer/prompt/test edits, final server process healthy.
+  - `docker compose logs --tail=60 frontend` -> Vite dev server ready.
+  - `docker compose logs --tail=60 db` -> PostgreSQL ready to accept connections.
+
+### Notes
+- Section 4 is complete: `harness_change_set` synthesis is now main-agent/tool authored only, with prompt guidance enforcing the synthesis contract.

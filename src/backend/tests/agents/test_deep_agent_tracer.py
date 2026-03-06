@@ -331,7 +331,7 @@ def test_build_deep_agent_tracer_parallel_error_analysis_uses_invokable_agent_ru
     assert result["parallel_error_findings"][0]["suggested_fix_category"] == "agent_runner_category"
 
 
-def test_build_deep_agent_tracer_synthesizes_harness_change_set_from_findings(
+def test_build_deep_agent_tracer_does_not_synthesize_harness_change_set_without_model_tool_call(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _patch_bind_tools(monkeypatch)
@@ -356,14 +356,8 @@ def test_build_deep_agent_tracer_synthesizes_harness_change_set_from_findings(
         }
     )
 
-    assert result["harness_change_set"]["run_id"] == "run-harness-synthesis"
-    assert result["harness_change_set"]["trace_ids"] == ["trace-err-1"]
-    assert result["harness_change_set"]["harness_changes"][0]["category"] == "config"
-    assert (
-        result["harness_change_set"]["harness_changes"][0]["config_change"]["key"]
-        == "sandbox.command_timeout_seconds"
-    )
-    assert result["harness_changes"] == result["harness_change_set"]["harness_changes"]
+    assert "harness_change_set" not in result
+    assert "harness_changes" not in result
 
 
 def test_build_deep_agent_tracer_uses_model_synthesis_tool_for_harness_change_set(

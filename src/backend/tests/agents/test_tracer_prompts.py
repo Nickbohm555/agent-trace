@@ -10,6 +10,7 @@ def test_build_tracer_system_prompt_contains_required_plan_build_verify_fix_sect
     assert "Build phase" in prompt
     assert "Verify phase" in prompt
     assert "Fix phase" in prompt
+    assert "Harness synthesis phase" in prompt
 
 
 def test_build_tracer_system_prompt_requires_spec_based_verification() -> None:
@@ -26,3 +27,11 @@ def test_build_tracer_system_prompt_enforces_testable_code_and_exact_paths() -> 
     assert "evaluated by programmatic tests" in prompt
     assert "Follow file paths from the task specification exactly" in prompt
     assert "edge cases as first-class requirements" in prompt
+
+
+def test_build_tracer_system_prompt_requires_model_authored_harness_synthesis() -> None:
+    prompt = build_tracer_system_prompt()
+
+    assert "parallel_error_findings" in prompt
+    assert "Call the `propose_harness_changes` tool exactly once" in prompt
+    assert "do not invent changes" in prompt

@@ -21,7 +21,6 @@ from agents.tracer_config import (
 )
 from agents.tracer_context import build_local_context_message, contains_local_context_message
 from agents.error_analysis_agent import collect_error_tasks, run_error_analysis_agent_tasks_in_parallel
-from agents.harness_change_synthesis import synthesize_harness_changes_from_findings
 from agents.tracer_middleware import (
     apply_loop_detection_injection,
     apply_time_budget_injection,
@@ -270,7 +269,7 @@ class TracerReasoningBudgetMiddleware(AgentMiddleware[TracerState, Any, Any]):
 
 
 class TracerHarnessSynthesisMiddleware(AgentMiddleware[TracerState, Any, Any]):
-    """Synthesize structured harness changes from parallel error findings."""
+    """Capture structured harness changes authored by the model synthesis tool."""
 
     def after_model(self, state: TracerState, runtime: Any) -> dict[str, Any] | None:
         del runtime
@@ -289,29 +288,7 @@ class TracerHarnessSynthesisMiddleware(AgentMiddleware[TracerState, Any, Any]):
                 "harness_changes": model_change_set.get("harness_changes", []),
             }
 
-        existing_change_set = state.get("harness_change_set")
-        if isinstance(existing_change_set, Mapping) and existing_change_set:
-            return None
-        if state.get("harness_changes"):
-            return None
-
-        synthesized_change_set = synthesize_harness_changes_from_findings(state)
-        if synthesized_change_set is None:
-            return None
-
-        dumped_change_set = synthesized_change_set.model_dump(mode="json")
-        logger.info(
-            "Injected synthesized harness changes into deep-agent state",
-            extra={
-                "run_id": state.get("run_id"),
-                "change_count": len(dumped_change_set.get("harness_changes", [])),
-                "trace_id_count": len(dumped_change_set.get("trace_ids", [])),
-            },
-        )
-        return {
-            "harness_change_set": dumped_change_set,
-            "harness_changes": dumped_change_set.get("harness_changes", []),
-        }
+        return None
 
     @staticmethod
     def _extract_model_synthesized_change_set(state: Mapping[str, Any]) -> dict[str, Any] | None:

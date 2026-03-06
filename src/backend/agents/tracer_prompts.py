@@ -48,6 +48,17 @@ _TESTABLE_CODE = dedent(
     """
 ).strip()
 
+_HARNESS_SYNTHESIS = dedent(
+    """
+    Harness synthesis phase:
+    - When `parallel_error_findings` contains one or more findings, synthesize harness improvements before finalizing.
+    - Call the `propose_harness_changes` tool exactly once to submit structured suggestions.
+    - Use the active `run_id`, include impacted `trace_ids`, and provide a concise summary tied to findings.
+    - Every proposed item in `harness_changes` must be concrete, testable, and grounded in observed findings.
+    - If findings are empty or insufficient, do not invent changes; explain uncertainty and leave synthesis empty.
+    """
+).strip()
+
 
 def build_tracer_system_prompt() -> str:
     """Return the tracer's plan-build-verify-fix system prompt."""
@@ -59,5 +70,6 @@ def build_tracer_system_prompt() -> str:
             _TESTABLE_CODE,
             _VERIFY,
             _FIX,
+            _HARNESS_SYNTHESIS,
         ]
     )
