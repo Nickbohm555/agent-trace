@@ -666,3 +666,52 @@
 **Operational note:**
 - Changed container: `backend`.
 - Restarted changed service with `docker compose restart backend` and reviewed backend/frontend/db logs.
+
+## Section 17: Harness change schema
+
+**Depends on:** None (schema only; consumed by Section 18 and API/UI).
+
+**Single goal:** Define a machine-readable schema for suggested harness changes (prompt edits, tool changes, config) so downstream can apply or review.
+
+**Deep-agent capability:** Trace Analyzer Skill — structured harness change schema (prompt/tool/config) for downstream apply or review.
+
+**Details implemented:**
+- Added `src/backend/schemas/harness_changes.py` with strict Pydantic models for machine-readable harness suggestions:
+  - `SuggestedPromptEdit`, `SuggestedToolChange`, `SuggestedConfigChange`
+  - `HarnessChange` (category + confidence + priority)
+  - `HarnessChangeSet` aggregate output model for run/trace-scoped suggestions.
+- Implemented validation to enforce category/payload consistency:
+  - `category="prompt"` requires `prompt_edit` only.
+  - `category="tool"` requires `tool_change` only.
+  - `category="config"` requires `config_change` only.
+- Added schema-focused unit tests in `src/backend/tests/schemas/test_harness_changes.py` covering:
+  - valid instantiation and JSON-serializable dump
+  - missing required category payload rejection
+  - mismatched category payload rejection
+- Fixed one failing assertion by ordering schema validator checks so mismatched payloads return deterministic validation errors.
+
+**Test results:**
+- `docker compose exec backend uv run pytest tests/schemas/test_harness_changes.py`
+- Initial run: `1 failed, 2 passed` (validator error-order mismatch)
+- Final run: `3 passed in 0.03s` on 2026-03-06.
+
+**Useful logs (2026-03-06):**
+- Container status after restart (`docker compose ps`):
+  - `backend` up on `0.0.0.0:8001->8000/tcp`
+  - `frontend` up on `0.0.0.0:5174->5173/tcp`
+  - `db` healthy on `0.0.0.0:5433->5432/tcp`
+- Backend logs (`docker compose logs --tail=120 backend`):
+  - `INFO: Uvicorn running on http://0.0.0.0:8000`
+  - `INFO: Application startup complete.`
+  - `WARNING: WatchFiles detected changes in 'schemas/harness_changes.py'. Reloading...` (expected during iteration)
+- Frontend logs (`docker compose logs --tail=80 frontend`):
+  - `VITE v7.3.1 ready`
+  - `Local: http://localhost:5173/`
+- DB logs (`docker compose logs --tail=80 db`):
+  - `database system is ready to accept connections`
+- Backend readiness:
+  - `curl -sf -o /dev/null -w "%{http_code}" http://localhost:8001/docs` returned `200`.
+
+**Operational note:**
+- Changed container: `backend`.
+- Restarted backend with `docker compose restart backend` and reviewed backend/frontend/db logs.
