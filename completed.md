@@ -983,3 +983,44 @@
 
 ### Notes
 - Containers changed only as part of the mandated fresh reboot before work; no code edits were made in this section, so no additional restart was required afterward.
+
+## Section E4: E2E — API validation error returns 422 and detail shape
+
+**Single goal:** Verify that an invalid request to `POST /api/tracer/run` (e.g. missing both `run_id` and `trace_ids`) returns 422 and a `detail` field suitable for UI error display.
+
+### Completed work
+- Reused existing API validation behavior in `src/backend/schemas/tracer_api.py` and endpoint wiring in `src/backend/routers/tracer.py`; no source code changes were required for this verification-only section.
+- Per iteration requirement, performed a full fresh restart before validation:
+  - `docker compose down -v --rmi all`
+  - `docker compose build`
+  - `docker compose up -d`
+- Verified live invalid request behavior for `POST /api/tracer/run` returns `422` and includes a `detail` array with validation entries suitable for UI display.
+
+### Codebase reuse/search notes (pre-change)
+- `rg -n "tracer/run|TracerRun|422|validation|detail" src/backend src/frontend docker-compose.yml`
+- Confirmed existing request validation and explicit 422 handling were already implemented and covered by backend/frontend logic.
+
+### Validation commands and outcomes
+- Backend readiness spot check:
+  - `curl -s -o /tmp/e4_health_body.json -w '%{http_code}' http://localhost:8001/api/health`
+  - Outcome: `200` with body `{"status":"ok"}`.
+- Required E4 live API check:
+  - `curl -s -o /tmp/e4_invalid_body.json -w '%{http_code}' -X POST http://localhost:8001/api/tracer/run -H 'Content-Type: application/json' -d '{"target_repo_url":"https://example.com/repo.git"}'`
+  - Outcome: `422` with body containing `detail` array, e.g. `{"detail":[{"msg":"Value error, Provide at least one of run_id or trace_ids.", ...}]}`.
+- Backend test validation for this behavior:
+  - `docker compose exec backend uv run pytest tests/api/test_tracer_run.py -k rejects_missing_run_id_and_trace_ids`
+  - Outcome: success (`1 passed, 4 deselected in 6.57s`).
+
+### Useful logs captured
+- `docker compose logs --tail=160 backend`
+  - Includes request log: `"POST /api/tracer/run HTTP/1.1" 422 Unprocessable Entity`.
+  - Includes health request log: `"GET /api/health HTTP/1.1" 200 OK`.
+  - Includes successful Alembic + Uvicorn startup logs after fresh restart.
+- `docker compose logs --tail=80 frontend`
+  - Vite dev server ready (`VITE v7.3.1 ready`) and serving on container port `5173` (host mapped `5174`).
+- `docker compose logs --tail=120 db`
+  - PostgreSQL initialization complete and database ready to accept connections.
+
+### Notes
+- One intermediate command used an incorrect in-container test path (`src/backend/tests/...`) and was corrected immediately to `tests/...`; final required test run passed.
+- Containers were fully rebooted for this section; no subsequent code changes required additional rebuilds.
