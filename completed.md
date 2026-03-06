@@ -1524,3 +1524,50 @@
 ### Notes
 - Section E12 complete on March 6, 2026.
 - Chrome debug endpoint verification (`curl http://127.0.0.1:9223/json/list`): returned JSON target list with `webSocketDebuggerUrl`.
+
+## Section E13: E2E (mocked) — Improvement metrics only when present
+
+**Single goal:** With success mock that has improvement_metrics: null, assert "Improvement Metrics" section is not rendered. With success mock that has improvement_metrics set, assert "Improvement Metrics" and "Improved" or "Not Improved" are visible.
+
+**Details:**
+- Two tests or one parameterized: (1) response with improvement_metrics: null → no "Improvement Metrics" heading. (2) Response with improvement_metrics (e.g. improved: true) → "Improvement Metrics" and "Improved" visible. Ensures metrics block is conditional and correct.
+
+**Tech stack and dependencies**
+- Vitest, @testing-library/react. No new packages.
+
+**Files and purpose**
+
+| File | Purpose |
+|------|--------|
+| src/frontend/src/App.test.tsx | Add tests: metrics absent vs present. |
+
+**How to test:** `npm run test`; assert metrics section presence/absence per mock.
+
+### Completed work
+- Reused existing E9-style coverage for the `improvement_metrics: null` case (`Improvement Metrics` heading remains hidden).
+- Added a new mocked frontend E2E test in `src/frontend/src/App.test.tsx` for the `improvement_metrics` present case and asserted:
+  - `Improvement Metrics` heading is rendered.
+  - `Improved` status text is rendered when `improved: true`.
+- Kept existing frontend UI behavior and architecture unchanged (test-only scope).
+
+### Validation commands and outcomes
+- `docker compose restart frontend`
+  - Outcome: success (frontend container restarted cleanly).
+- `docker compose logs --no-color --tail=120 backend frontend db`
+  - Outcome: reviewed logs; frontend Vite dev server ready, backend Uvicorn/alembic startup complete, db ready to accept connections.
+- `docker compose exec frontend npm run test`
+  - Outcome: success (`1 passed file`, `8 passed tests`), including the new metrics-present test.
+
+### Useful logs
+- `docker compose ps`
+  - backend: Up
+  - frontend: Up
+  - db: Up (healthy)
+  - chrome: Up
+- Frontend test run excerpt:
+  - `src/App.test.tsx > App tracer run UI > renders improvement metrics section when metrics are present`
+  - `Tracer run completed { runId: 'run-metrics-1', harnessChangeCount: 1, metricsAvailable: true }`
+  - `✓ src/App.test.tsx (8 tests)`
+
+### Notes
+- Section E13 complete.

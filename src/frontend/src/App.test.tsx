@@ -175,6 +175,92 @@ describe("App tracer run UI", () => {
     expect(screen.queryByRole("heading", { name: "Improvement Metrics" })).toBeNull();
   });
 
+  it("renders improvement metrics section when metrics are present", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        run_id: "run-metrics-1",
+        target_repo_url: "https://example.com/repo.git",
+        trace_ids: [],
+        fetched_trace_count: 0,
+        persisted_trace_count: 0,
+        loaded_trace_count: 0,
+        harness_change_set: {
+          run_id: "run-metrics-1",
+          trace_ids: [],
+          summary: "Synthesized one harness change and measured improvement.",
+          created_at: "2026-03-06T00:00:00Z",
+          harness_changes: [
+            {
+              change_id: "chg-metrics-1",
+              title: "Tighten verification checklist",
+              category: "prompt",
+              priority: "high",
+              confidence: 0.88,
+              prompt_edit: {
+                target: "verification_prompt",
+                action: "append",
+                instruction: "Run smoke tests and summarize failures before final output.",
+                rationale: "Recent traces skipped explicit verification steps.",
+                expected_outcome: "Improved pass rate before completion.",
+              },
+            },
+          ],
+        },
+        improvement_metrics: {
+          baseline: {
+            command: ["npm", "test"],
+            cwd: "/workspace",
+            timeout_seconds: 120,
+            exit_code: 1,
+            success: false,
+            duration_ms: 12000,
+            tests_passed: 8,
+            tests_failed: 2,
+            tests_skipped: 1,
+            stdout_excerpt: "baseline output",
+            stderr_excerpt: "baseline errors",
+          },
+          post_change: {
+            command: ["npm", "test"],
+            cwd: "/workspace",
+            timeout_seconds: 120,
+            exit_code: 0,
+            success: true,
+            duration_ms: 11000,
+            tests_passed: 10,
+            tests_failed: 0,
+            tests_skipped: 1,
+            stdout_excerpt: "post-change output",
+            stderr_excerpt: "",
+          },
+          delta: {
+            exit_code_delta: -1,
+            success_delta: 1,
+            tests_passed_delta: 2,
+            tests_failed_delta: -2,
+            tests_skipped_delta: 0,
+            score_before: 0.8,
+            score_after: 1.0,
+            score_delta: 0.2,
+          },
+          improved: true,
+        },
+      }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    fireEvent.change(screen.getByLabelText("Run ID"), { target: { value: "run-metrics-1" } });
+    fireEvent.click(screen.getByRole("button", { name: "Run Tracer" }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    expect(await screen.findByText("Completed")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Improvement Metrics" })).toBeTruthy();
+    expect(screen.getByText("Improved")).toBeTruthy();
+  });
+
   it("shows running state while tracer request is in flight and resets controls on completion", async () => {
     const fetchMock = vi.fn().mockImplementation(
       () =>
