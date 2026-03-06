@@ -5,8 +5,6 @@ Before starting, completely restart the application so we have fresh builds, log
 
 997. Iteration scope: complete the item that is specified for you at the top of the plan.
 
-0. Read the TOP of in @IMPLEMENTATION_PLAN.md where it says: Tracing deep-agent (harness engineering) to get context before diving in. Just know enough so you know what the app is about.
-
 1. Take the item in  @IMPLEMENTATION_PLAN.md where it says: 'Current section to work on:'
 
 
