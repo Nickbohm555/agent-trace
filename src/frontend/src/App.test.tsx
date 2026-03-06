@@ -113,8 +113,16 @@ describe("App tracer run UI", () => {
   it("renders backend error message when run fails", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: false,
-      status: 400,
-      json: async () => ({ detail: "Provide at least one of run_id or trace_ids." }),
+      status: 422,
+      json: async () => ({
+        detail: [
+          {
+            type: "value_error",
+            loc: ["body"],
+            msg: "Value error, Provide at least one of run_id or trace_ids.",
+          },
+        ],
+      }),
     });
     vi.stubGlobal("fetch", fetchMock);
 
@@ -124,6 +132,6 @@ describe("App tracer run UI", () => {
     fireEvent.click(screen.getByRole("button", { name: "Run Tracer" }));
 
     expect(await screen.findByText("Failed")).toBeTruthy();
-    expect(screen.getByText("Provide at least one of run_id or trace_ids.")).toBeTruthy();
+    expect(screen.getByText("Value error, Provide at least one of run_id or trace_ids.")).toBeTruthy();
   });
 });

@@ -441,3 +441,63 @@
 
 ### Notes
 - Section 11 required no new code changes because legacy agent tests had already been migrated/removed in prior sections; this iteration verified and documented deep-agent-only test coverage.
+
+## Section 12: Verify API and UI with deep-agent backend
+
+**Single goal:** Confirm POST /api/tracer/run and the frontend tracer run form and results UI work correctly with the deep-agent-backed orchestration; fix any contract or behavior regressions.
+
+**Details:**
+- Manually or via E2E test: submit a tracer run from the UI; assert completion and display of harness change summary (or "no changes"); assert error display on failure.
+- Verify response shape (harness_change_set, improvement_metrics) matches frontend types; no breaking change to API response schema.
+- Document any intentional contract change; otherwise ensure parity with pre-refactor behavior.
+
+### Completed work
+- Verified backend tracer endpoint and frontend API contract alignment by inspecting:
+  - `src/backend/routers/tracer.py`
+  - `src/backend/services/trace_analyzer_service.py`
+  - `src/frontend/src/utils/api.ts`
+  - `src/frontend/src/App.tsx`
+- Found and fixed a real regression in frontend error handling:
+  - FastAPI/Pydantic validation errors return `detail` as an array of objects, but frontend `parseErrorMessage` only handled string `detail`.
+  - Updated `src/frontend/src/utils/api.ts` to parse both:
+    - string detail
+    - array detail (`[{ msg: ... }]`)
+- Updated UI test to cover actual backend 422 payload shape:
+  - `src/frontend/src/App.test.tsx` now asserts display of the validation message extracted from array-form `detail`.
+
+### Validation commands and outcomes
+- Full clean restart before work:
+  - `docker compose down -v --rmi all` -> completed (removed containers/volumes/images where allowed; base images remained in-use as expected).
+  - `docker compose build` -> completed.
+  - `docker compose up -d` -> completed (`db`, `backend`, `frontend`, `chrome` started; `db` healthy).
+- Live readiness checks:
+  - `curl -s -o /tmp/section12_docs.html -w '%{http_code}\\n' http://localhost:8001/docs` -> `200`.
+  - `curl -s -o /tmp/section12_frontend.html -w '%{http_code}\\n' http://localhost:5174` -> `200`.
+- Live API success contract check:
+  - `curl -s -X POST http://localhost:8001/api/tracer/run -H 'Content-Type: application/json' -d '{"run_id":"section12-run-1"}'`
+  - Outcome: `200` with response keys including `harness_change_set` and `improvement_metrics: null`.
+- Live API failure contract check:
+  - `curl -s -X POST http://localhost:8001/api/tracer/run -H 'Content-Type: application/json' -d '{"target_repo_url":"https://example.com/repo.git"}'`
+  - Outcome: validation payload with array-form `detail` and `msg="Value error, Provide at least one of run_id or trace_ids."`.
+- Backend/API regression coverage:
+  - `docker compose exec backend uv run pytest tests/api/test_tracer_run.py tests/services/test_trace_analyzer_service.py` -> passed (`5 passed in 2.67s`).
+- Frontend required checks:
+  - `docker compose exec frontend npm run test` -> passed (`2 passed`).
+  - `docker compose exec frontend npm run typecheck` -> passed.
+  - `docker compose exec frontend npm run build` -> passed.
+- Browser debug endpoint check (per chromeDev workflow guidance):
+  - `curl -s http://127.0.0.1:9223/json/list` -> returned active target with `webSocketDebuggerUrl`.
+
+### Container restart/rebuild logs
+- Changed container scope: frontend-only source changes (`src/frontend/src/utils/api.ts`, `src/frontend/src/App.test.tsx`).
+- Post-change container refresh:
+  - `docker compose restart frontend` -> completed.
+- Final running state:
+  - `docker compose ps` -> `db`, `backend`, `frontend`, `chrome` all `Up` (`db` healthy).
+- Final logs reviewed:
+  - `docker compose logs --tail=220 backend` -> showed `GET /docs 200`, `POST /api/tracer/run 422`, and `POST /api/tracer/run 200` after checks.
+  - `docker compose logs --tail=160 frontend` -> Vite dev server ready after restart.
+  - `docker compose logs --tail=120 db` -> PostgreSQL ready to accept connections.
+
+### Notes
+- No backend response schema changes were required; this section preserved contract parity while improving frontend handling of existing FastAPI validation error format.

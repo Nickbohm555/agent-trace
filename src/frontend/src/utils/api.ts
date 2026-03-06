@@ -102,11 +102,21 @@ export type TracerRunResponse = {
   improvement_metrics?: ImprovementMetrics | null;
 };
 
+type ApiErrorPayload = {
+  detail?: string | Array<{ msg?: string }>;
+};
+
 async function parseErrorMessage(response: Response): Promise<string> {
   try {
-    const payload = (await response.json()) as { detail?: string };
+    const payload = (await response.json()) as ApiErrorPayload;
     if (typeof payload.detail === "string" && payload.detail.trim() !== "") {
       return payload.detail;
+    }
+    if (Array.isArray(payload.detail) && payload.detail.length > 0) {
+      const firstMessage = payload.detail.find((item) => typeof item?.msg === "string")?.msg;
+      if (firstMessage && firstMessage.trim() !== "") {
+        return firstMessage;
+      }
     }
   } catch {
     // Ignore json parse failure and return fallback below.
