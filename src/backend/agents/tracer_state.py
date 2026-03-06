@@ -15,6 +15,8 @@ class TracerState(TypedDict, total=False):
     messages: Annotated[list[AnyMessage], add_messages]
     current_trace_summary: str | None
     run_id: str
+    sandbox_path: str
+    local_context: str
     reasoning_phase: ReasoningPhase
     reasoning_level: ReasoningLevel
     reasoning_phase_levels: dict[ReasoningPhase, ReasoningLevel]

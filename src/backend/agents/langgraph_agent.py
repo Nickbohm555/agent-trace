@@ -16,6 +16,7 @@ from agents.tracer_config import (
     resolve_reasoning_level,
     resolve_reasoning_phase,
 )
+from agents.tracer_context import build_local_context_message, contains_local_context_message
 from agents.tracer_prompts import build_tracer_system_prompt
 from agents.tracer_state import TracerState
 from services.sandbox_service import SandboxService
@@ -56,12 +57,45 @@ def default_model_invoke(_: TracerState, __: ReasoningPhase, ___: ReasoningLevel
 
 def _inject_system_prompt(state: TracerState, system_prompt: str) -> TracerState:
     messages: list[AnyMessage] = list(state.get("messages", []))
-    if messages and isinstance(messages[0], SystemMessage):
+    if messages and isinstance(messages[0], SystemMessage) and system_prompt in str(messages[0].content):
         return state
 
     prompted_state: TracerState = dict(state)
     prompted_state["messages"] = [SystemMessage(content=system_prompt), *messages]
     return prompted_state
+
+
+def _inject_local_context(
+    state: TracerState,
+    *,
+    sandbox_service: SandboxService | None,
+) -> TracerState:
+    if sandbox_service is None:
+        return state
+
+    sandbox_path = state.get("sandbox_path")
+    if not sandbox_path:
+        return state
+
+    messages: list[AnyMessage] = list(state.get("messages", []))
+    if contains_local_context_message(messages):
+        return state
+
+    context_message = state.get("local_context")
+    if not context_message:
+        context_message = build_local_context_message(
+            sandbox_service=sandbox_service,
+            sandbox_path=sandbox_path,
+        )
+
+    contextual_state: TracerState = dict(state)
+    contextual_state["local_context"] = context_message
+    contextual_state["messages"] = [SystemMessage(content=context_message), *messages]
+    logger.info(
+        "Injected tracer local context",
+        extra={"sandbox_path": sandbox_path, "run_id": state.get("run_id")},
+    )
+    return contextual_state
 
 
 def build_tracer_graph(
@@ -95,12 +129,17 @@ def build_tracer_graph(
                 state.get("reasoning_level"),
                 fallback=selected_reasoning_config.level_for_phase(phase),
             )
-            prompted_state = _inject_system_prompt(state, selected_system_prompt)
+            contextual_state = _inject_local_context(state, sandbox_service=sandbox_service)
+            prompted_state = _inject_system_prompt(contextual_state, selected_system_prompt)
             logger.info(
                 "Executing tracer agent with reasoning configuration",
                 extra={"phase": phase, "reasoning_level": level, "run_id": state.get("run_id")},
             )
-            return {"messages": [selected_model_invoke(prompted_state, phase, level)]}
+            response = selected_model_invoke(prompted_state, phase, level)
+            updates: dict[str, Any] = {"messages": [response]}
+            if contextual_state.get("local_context") and not state.get("local_context"):
+                updates["local_context"] = contextual_state["local_context"]
+            return updates
 
         resolved_agent_node = configured_agent_node
     else:

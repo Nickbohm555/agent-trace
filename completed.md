@@ -427,3 +427,44 @@
 **Operational note:**
 - Changed container: `backend`.
 - Restarted backend with `docker compose restart backend` after implementation and re-checked backend/frontend/db logs.
+
+## Section 12: Local context injection for tracer
+
+**Depends on:** Section 3 (sandbox), Section 4 (graph).
+
+**Single goal:** On tracer start, inject context about the sandbox environment: cwd, directory map, and available tools (e.g. Python path, key binaries).
+
+**Deep-agent capability:** Context management — local context injection (LocalContextMiddleware; onboard agent into environment).
+
+**Details implemented:**
+- Added `src/backend/agents/tracer_context.py` with sandbox discovery helpers to build a structured local context payload at run start.
+- Context now includes sandbox cwd, top-level directory map, and tool path detection (`python3`, `python`, `pytest`, `node`, `npm`, `git`, `uv`) via sandbox-scoped commands.
+- Extended `src/backend/agents/tracer_state.py` with `sandbox_path` and `local_context` fields so context can be injected once and persisted in state.
+- Updated `src/backend/agents/langgraph_agent.py` to:
+  - inject local context as a system message when `sandbox_path` is provided,
+  - persist generated local context in state,
+  - preserve prompt injection by checking for actual tracer system prompt content (fixes collision with context system messages),
+  - add logging for local-context generation/injection.
+- Added tests in `src/backend/tests/agents/test_tracer_context.py` for context builder output and marker detection.
+- Extended `src/backend/tests/agents/test_langgraph_agent.py` with integration coverage verifying first-turn local context injection into model-visible state.
+
+**Test results:**
+- `docker compose exec backend uv run pytest tests/agents/test_tracer_context.py tests/agents/test_langgraph_agent.py`
+- Result: `11 passed in 0.94s` on 2026-03-06.
+
+**Useful logs (2026-03-06):**
+- `docker compose restart backend` completed successfully; `docker compose ps` shows `backend`, `frontend`, `db`, and `chrome` running (`db` healthy).
+- Backend logs:
+  - `INFO:     Uvicorn running on http://0.0.0.0:8000`
+  - `INFO:     Application startup complete.`
+  - `WARNING:  WatchFiles detected changes in 'agents/tracer_context.py'. Reloading...` (expected during iteration)
+- Frontend logs:
+  - `VITE v7.3.1 ready in 436 ms`
+  - `Local: http://localhost:5173/`
+- DB logs:
+  - `database system is ready to accept connections`
+
+**Operational note:**
+- Changed container: `backend`.
+- Full clean restart was completed before implementation (`docker compose down -v --rmi all && docker compose build && docker compose up -d`).
+- Post-change restart performed for `backend` and logs were reviewed for `backend`, `frontend`, and `db`.

@@ -275,3 +275,38 @@ def test_build_tracer_graph_executes_run_command_tool_with_sandbox(
     assert result["messages"][2].content == "Command verified"
 
     sandbox_service.teardown_sandbox(session)
+
+
+def test_build_tracer_graph_injects_local_context_on_first_turn(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _mock_clone_to_local_repo(monkeypatch)
+    sandbox_service = SandboxService(default_target_repo_url="https://example.com/default.git")
+    session = sandbox_service.create_sandbox(SandboxCreateRequest())
+
+    captured_messages: list[object] = []
+
+    def model_invoke(state: dict[str, object], _: str, __: str) -> AIMessage:
+        nonlocal captured_messages
+        captured_messages = list(state["messages"])
+        return AIMessage(content="Local context captured")
+
+    graph = build_tracer_graph(model_invoke=model_invoke, sandbox_service=sandbox_service)
+    result = graph.invoke(
+        {
+            "messages": [],
+            "run_id": "run-local-context",
+            "current_trace_summary": None,
+            "sandbox_path": session.sandbox_path,
+        }
+    )
+
+    assert isinstance(captured_messages[0], SystemMessage)
+    assert "Planning & Discovery phase" in str(captured_messages[0].content)
+    assert isinstance(captured_messages[1], SystemMessage)
+    assert "Sandbox local context:" in str(captured_messages[1].content)
+    assert "tool_paths:" in str(captured_messages[1].content)
+    assert result["messages"][0].content == "Local context captured"
+    assert "Sandbox local context:" in str(result["local_context"])
+
+    sandbox_service.teardown_sandbox(session)
