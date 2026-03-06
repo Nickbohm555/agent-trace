@@ -51,6 +51,7 @@ async def run_tracer(
         evaluation_timeout_seconds=payload.evaluation_timeout_seconds,
         max_runtime_seconds=payload.max_runtime_seconds,
         max_steps=payload.max_steps,
+        harness_feedback=payload.harness_feedback,
     )
 
     logger.info(

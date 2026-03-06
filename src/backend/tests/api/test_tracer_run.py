@@ -50,6 +50,12 @@ def test_run_tracer_endpoint_calls_trace_analyzer_service_and_returns_payload() 
                 "limit": 25,
                 "max_runtime_seconds": 300,
                 "max_steps": 10,
+                "harness_feedback": {
+                    "summary": "User feedback summary.",
+                    "trace_ids": ["trace-feedback"],
+                    "harness_changes": [],
+                    "replace_existing_changes": False,
+                },
             },
         )
     finally:
@@ -65,6 +71,8 @@ def test_run_tracer_endpoint_calls_trace_analyzer_service_and_returns_payload() 
     assert fake_service.last_request.run_id == "run-123"
     assert fake_service.last_request.max_runtime_seconds == 300
     assert fake_service.last_request.max_steps == 10
+    assert fake_service.last_request.harness_feedback is not None
+    assert fake_service.last_request.harness_feedback.summary == "User feedback summary."
 
 
 def test_run_tracer_endpoint_accepts_trace_ids_without_explicit_run_id() -> None:

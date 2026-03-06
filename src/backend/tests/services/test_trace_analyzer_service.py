@@ -2,7 +2,12 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from schemas.harness_changes import HarnessChangeSet
+from schemas.harness_changes import (
+    HarnessChange,
+    HarnessChangeFeedback,
+    HarnessChangeSet,
+    SuggestedPromptEdit,
+)
 from schemas.improvement_metrics import ImprovementMetrics
 from schemas.sandbox import SandboxSession
 from schemas.trace import NormalizedTrace
@@ -240,3 +245,110 @@ def test_trace_analyzer_runs_boosting_metrics_when_evaluation_command_is_provide
     assert result.harness_change_set.summary == "Synthesized one harness change after boosting."
     assert result.improvement_metrics is not None
     assert result.improvement_metrics.improved is True
+
+
+def test_aggregate_harness_change_set_merges_agent_suggestions_with_feedback() -> None:
+    base_change_set = HarnessChangeSet(
+        run_id="run-agg-1",
+        trace_ids=["trace-a"],
+        summary="Base summary.",
+        harness_changes=[
+            HarnessChange(
+                change_id="prompt-1",
+                title="Base prompt update",
+                category="prompt",
+                prompt_edit=SuggestedPromptEdit(
+                    target="verification_prompt",
+                    action="append",
+                    instruction="Ensure command outputs are verified.",
+                    rationale="Baseline finding showed skipped verification.",
+                ),
+            )
+        ],
+    )
+    feedback = HarnessChangeFeedback(
+        summary="Feedback-adjusted summary.",
+        trace_ids=["trace-feedback", "trace-a"],
+        harness_changes=[
+            HarnessChange(
+                change_id="prompt-1",
+                title="Duplicate prompt update",
+                category="prompt",
+                prompt_edit=SuggestedPromptEdit(
+                    target="verification_prompt",
+                    action="append",
+                    instruction="Duplicate should be ignored.",
+                    rationale="Duplicate change id.",
+                ),
+            ),
+            HarnessChange(
+                change_id="prompt-2",
+                title="Feedback prompt update",
+                category="prompt",
+                prompt_edit=SuggestedPromptEdit(
+                    target="system_prompt",
+                    action="clarify",
+                    instruction="Require stable selectors for retries.",
+                    rationale="Feedback identified flaky selectors.",
+                ),
+            ),
+        ],
+    )
+
+    merged = TraceAnalyzerService._aggregate_harness_change_set(
+        base_change_set=base_change_set,
+        feedback=feedback,
+        run_id="run-agg-1",
+        traces=[],
+    )
+
+    assert merged.run_id == "run-agg-1"
+    assert merged.summary == "Feedback-adjusted summary."
+    assert merged.trace_ids == ["trace-a", "trace-feedback"]
+    assert [change.change_id for change in merged.harness_changes] == ["prompt-1", "prompt-2"]
+
+
+def test_aggregate_harness_change_set_can_replace_existing_changes() -> None:
+    base_change_set = HarnessChangeSet(
+        run_id="run-agg-2",
+        trace_ids=["trace-a"],
+        summary="Base summary.",
+        harness_changes=[
+            HarnessChange(
+                change_id="prompt-1",
+                title="Base prompt update",
+                category="prompt",
+                prompt_edit=SuggestedPromptEdit(
+                    target="verification_prompt",
+                    action="append",
+                    instruction="Base",
+                    rationale="Base",
+                ),
+            )
+        ],
+    )
+    feedback = HarnessChangeFeedback(
+        harness_changes=[
+            HarnessChange(
+                change_id="prompt-replace",
+                title="Replacement prompt update",
+                category="prompt",
+                prompt_edit=SuggestedPromptEdit(
+                    target="system_prompt",
+                    action="replace",
+                    instruction="Replacement",
+                    rationale="Replacement",
+                ),
+            ),
+        ],
+        replace_existing_changes=True,
+    )
+
+    merged = TraceAnalyzerService._aggregate_harness_change_set(
+        base_change_set=base_change_set,
+        feedback=feedback,
+        run_id="run-agg-2",
+        traces=[],
+    )
+
+    assert [change.change_id for change in merged.harness_changes] == ["prompt-replace"]

@@ -686,3 +686,69 @@
 
 ### Notes
 - Section 4 is complete: `harness_change_set` synthesis is now main-agent/tool authored only, with prompt guidance enforcing the synthesis contract.
+
+## Section 5: Aggregation step for harness suggestions and feedback
+
+**Single goal:** Add an aggregation step that combines agent-produced harness suggestions with optional external feedback into a single `HarnessChangeSet`-shaped output.
+
+**Details:**
+- After the graph returns, run an aggregation function that takes the agent-produced `harness_change_set` and optional feedback (e.g. from a prior run or API payload) and returns a merged/updated `HarnessChangeSet`. Do not change the schema of `HarnessChangeSet`.
+- No approval or apply logic in this section; only the aggregation of “suggestions + feedback.”
+
+**Tech stack and dependencies**
+- Libraries/packages: None new beyond existing harness schemas.
+- Tooling: None new.
+
+**Files and purpose**
+
+| File | Purpose |
+|------|--------|
+| src/backend/services/trace_analyzer_service.py | Run aggregation after graph return; merge suggestions with feedback. |
+| src/backend/schemas (or new) | Optional: feedback payload schema for aggregation input. |
+
+**How to test:** Unit test: aggregation merges agent suggestions with feedback and returns a valid `HarnessChangeSet`.
+
+### Completed work
+- Added feedback input schema in `src/backend/schemas/harness_changes.py`:
+  - `HarnessChangeFeedback` with `summary`, `trace_ids`, `harness_changes`, and `replace_existing_changes`.
+- Extended tracer API request schema in `src/backend/schemas/tracer_api.py`:
+  - New optional request field: `harness_feedback`.
+- Wired request payload in `src/backend/routers/tracer.py`:
+  - Forward `payload.harness_feedback` into `TraceAnalyzerRequest`.
+- Implemented post-graph aggregation in `src/backend/services/trace_analyzer_service.py`:
+  - Added `TraceAnalyzerRequest.harness_feedback`.
+  - Added `_aggregate_harness_change_set(...)` to merge graph suggestions with optional feedback.
+  - Added `_merge_trace_ids(...)` to preserve deterministic, de-duplicated trace ordering.
+  - Merge rules:
+    - no feedback: return base model-authored change set.
+    - feedback with `replace_existing_changes=false`: append non-duplicate feedback changes by `change_id`.
+    - feedback with `replace_existing_changes=true`: replace base change list with feedback changes.
+    - summary: feedback summary (when non-empty) overrides base summary.
+  - Added explicit `logger.info(...)` visibility logs for skip/aggregate paths with run id + change counts.
+- Added/updated tests:
+  - `src/backend/tests/services/test_trace_analyzer_service.py`
+    - `test_aggregate_harness_change_set_merges_agent_suggestions_with_feedback`
+    - `test_aggregate_harness_change_set_can_replace_existing_changes`
+  - `src/backend/tests/api/test_tracer_run.py`
+    - extended endpoint test to pass `harness_feedback` and assert it is forwarded to service request.
+
+### Validation commands and outcomes
+- `docker compose exec backend uv run pytest tests/services/test_trace_analyzer_service.py tests/api/test_tracer_run.py`
+  - Outcome: success (`7 passed in 2.41s`).
+
+### Container restart/rebuild logs
+- Pre-task full clean restart (fresh builds/logs):
+  - `docker compose down -v --rmi all`
+  - `docker compose build`
+  - `docker compose up -d`
+- Post-change refresh (changed container scope: backend code + backend tests):
+  - `docker compose restart backend`
+- Running state check:
+  - `docker compose ps` -> `db`, `backend`, `frontend`, `chrome` all `Up` (`db` healthy).
+- Logs reviewed:
+  - `docker compose logs --tail=120 backend` -> alembic + uvicorn startup complete; watch reloads after edited backend files; final server process healthy.
+  - `docker compose logs --tail=60 frontend` -> Vite dev server ready.
+  - `docker compose logs --tail=60 db` -> PostgreSQL ready to accept connections.
+
+### Notes
+- Section 5 is complete: tracer output now supports deterministic aggregation of agent suggestions plus optional external feedback without changing `HarnessChangeSet` shape.

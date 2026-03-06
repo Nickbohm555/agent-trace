@@ -81,3 +81,12 @@ class HarnessChangeSet(BaseModel):
     summary: str | None = None
     harness_changes: list[HarnessChange] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
+class HarnessChangeFeedback(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    summary: str | None = None
+    trace_ids: list[str] = Field(default_factory=list)
+    harness_changes: list[HarnessChange] = Field(default_factory=list)
+    replace_existing_changes: bool = False

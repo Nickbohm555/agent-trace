@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Any, Callable
 
 from agents.deep_agent_tracer import build_deep_agent_tracer
-from schemas.harness_changes import HarnessChangeSet
+from schemas.harness_changes import HarnessChangeFeedback, HarnessChangeSet
 from schemas.improvement_metrics import ImprovementMetrics
 from schemas.sandbox import SandboxCreateRequest, SandboxSession
 from schemas.trace import NormalizedTrace, TraceQueryFilters, TraceStorageQuery
@@ -39,6 +39,7 @@ class TraceAnalyzerRequest:
     evaluation_timeout_seconds: int = 900
     max_runtime_seconds: int | None = None
     max_steps: int | None = None
+    harness_feedback: HarnessChangeFeedback | None = None
 
 
 @dataclass(frozen=True)
@@ -142,6 +143,12 @@ class TraceAnalyzerService:
                 )
             harness_change_set = self._build_change_set_from_graph_result(
                 graph_result=graph_result,
+                run_id=request.run_id,
+                traces=loaded_traces,
+            )
+            harness_change_set = self._aggregate_harness_change_set(
+                base_change_set=harness_change_set,
+                feedback=request.harness_feedback,
                 run_id=request.run_id,
                 traces=loaded_traces,
             )
@@ -253,6 +260,77 @@ class TraceAnalyzerService:
             summary="No harness changes were synthesized by the tracer graph.",
             harness_changes=[],
         )
+
+    @staticmethod
+    def _aggregate_harness_change_set(
+        *,
+        base_change_set: HarnessChangeSet,
+        feedback: HarnessChangeFeedback | None,
+        run_id: str,
+        traces: list[Any],
+    ) -> HarnessChangeSet:
+        if feedback is None:
+            logger.info(
+                "Skipping harness change aggregation because no feedback was supplied",
+                extra={
+                    "run_id": run_id,
+                    "base_change_count": len(base_change_set.harness_changes),
+                },
+            )
+            return base_change_set
+
+        trace_ids = TraceAnalyzerService._merge_trace_ids(
+            base_trace_ids=base_change_set.trace_ids,
+            feedback_trace_ids=feedback.trace_ids,
+            traces=traces,
+        )
+        if feedback.replace_existing_changes:
+            merged_changes = list(feedback.harness_changes)
+        else:
+            merged_changes = list(base_change_set.harness_changes)
+            seen_ids = {change.change_id for change in merged_changes}
+            for change in feedback.harness_changes:
+                if change.change_id in seen_ids:
+                    continue
+                merged_changes.append(change)
+                seen_ids.add(change.change_id)
+
+        merged_summary = feedback.summary.strip() if feedback.summary and feedback.summary.strip() else base_change_set.summary
+        aggregated_change_set = HarnessChangeSet(
+            run_id=base_change_set.run_id or run_id,
+            trace_ids=trace_ids,
+            summary=merged_summary,
+            harness_changes=merged_changes,
+            created_at=base_change_set.created_at,
+        )
+        logger.info(
+            "Aggregated harness changes with external feedback",
+            extra={
+                "run_id": run_id,
+                "base_change_count": len(base_change_set.harness_changes),
+                "feedback_change_count": len(feedback.harness_changes),
+                "replace_existing_changes": feedback.replace_existing_changes,
+                "aggregated_change_count": len(aggregated_change_set.harness_changes),
+                "aggregated_trace_id_count": len(aggregated_change_set.trace_ids),
+            },
+        )
+        return aggregated_change_set
+
+    @staticmethod
+    def _merge_trace_ids(
+        *,
+        base_trace_ids: list[str],
+        feedback_trace_ids: list[str],
+        traces: list[Any],
+    ) -> list[str]:
+        merged_trace_ids: list[str] = []
+        seen_trace_ids: set[str] = set()
+        for candidate in [*base_trace_ids, *feedback_trace_ids, *[trace.trace_id for trace in traces]]:
+            if candidate in seen_trace_ids:
+                continue
+            merged_trace_ids.append(candidate)
+            seen_trace_ids.add(candidate)
+        return merged_trace_ids
 
     @staticmethod
     def _coerce_graph_result_to_state(raw_result: Any) -> dict[str, Any]:

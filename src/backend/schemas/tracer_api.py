@@ -4,7 +4,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from schemas.harness_changes import HarnessChangeSet
+from schemas.harness_changes import HarnessChangeFeedback, HarnessChangeSet
 from schemas.improvement_metrics import ImprovementMetrics
 
 
@@ -24,6 +24,7 @@ class TracerRunRequest(BaseModel):
     evaluation_timeout_seconds: int = Field(default=900, ge=1, le=3600)
     max_runtime_seconds: int | None = Field(default=None, ge=1, le=7200)
     max_steps: int | None = Field(default=None, ge=1, le=200)
+    harness_feedback: HarnessChangeFeedback | None = None
 
     @model_validator(mode="after")
     def validate_run_or_trace_ids(self) -> TracerRunRequest:
