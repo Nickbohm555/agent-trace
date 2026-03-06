@@ -214,3 +214,50 @@
 **Operational note:**
 - Changed container: `backend`.
 - Restarted backend with `docker compose restart backend` after implementation and verified `docker compose ps` plus logs for `backend`, `frontend`, and `db`.
+
+## Section 7: Tracer tools - list and read codebase
+
+**Depends on:** Section 3 (sandbox), Section 4 (graph).
+
+**Single goal:** Give the tracer agent tools to list directories and read files in the sandboxed target repo.
+
+**Deep-agent capability:** Virtual filesystem - list directory, read file (with sandbox root).
+
+**Details implemented:**
+- Added sandbox-backed listing support in `src/backend/services/sandbox_service.py`:
+  - `list_directory(session, path)` to enumerate repo-relative entries with metadata.
+  - `list_directory_by_sandbox_path(...)` and `read_file_by_sandbox_path(...)` adapters so tool calls can operate from `sandbox_path`.
+  - Structured logging for directory listing and path-resolved file reads.
+- Added `src/backend/tools/codebase_tools.py` with structured tools:
+  - `list_directory(sandbox_path, path='.')`
+  - `read_file(sandbox_path, path)`
+  Both are wired through `SandboxService` so filesystem access stays sandbox-scoped.
+- Updated `src/backend/agents/langgraph_agent.py` to bind codebase tools when `sandbox_service` is provided.
+- Updated `src/backend/tools/__init__.py` exports for codebase tool builders.
+- Expanded tests:
+  - `src/backend/tests/tools/test_codebase_tools.py` (unit tests for list/read tool behavior with mocked clone)
+  - `src/backend/tests/services/test_sandbox_service.py` (covers list behavior in sandbox service flow)
+  - `src/backend/tests/agents/test_langgraph_agent.py` (integration loop where agent calls `list_directory` then `read_file` via ToolNode)
+
+**Test results:**
+- `docker compose exec backend uv run pytest tests/tools/test_codebase_tools.py tests/services/test_sandbox_service.py tests/agents/test_langgraph_agent.py`
+- Result: `11 passed in 0.87s` on 2026-03-06.
+
+**Useful logs (2026-03-06):**
+- `docker compose ps` after restart:
+  - `backend` up on `0.0.0.0:8001->8000/tcp`
+  - `frontend` up on `0.0.0.0:5174->5173/tcp`
+  - `db` healthy on `0.0.0.0:5433->5432/tcp`
+- Backend logs:
+  - `INFO: Uvicorn running on http://0.0.0.0:8000`
+  - `INFO: Application startup complete.`
+  - `WARNING: WatchFiles detected changes ... Reloading...` (expected during iteration)
+- Frontend logs:
+  - `VITE v7.3.1 ready`
+  - `Local: http://localhost:5173/`
+- DB logs:
+  - `database system is ready to accept connections`
+
+**Operational note:**
+- Changed container: `backend`.
+- Per iteration policy, restarted `backend` (`docker compose restart backend`) and re-checked backend/frontend/db logs.

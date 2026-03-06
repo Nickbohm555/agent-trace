@@ -1,10 +1,15 @@
 from __future__ import annotations
 
+from pathlib import Path
+
+import pytest
 from langchain_core.messages import AIMessage, ToolMessage
 from langchain_core.tools import StructuredTool
 
 from agents.langgraph_agent import build_tracer_graph, should_continue
 from agents.tracer_config import TracerReasoningConfig
+from schemas.sandbox import SandboxCreateRequest
+from services.sandbox_service import SandboxService
 
 
 def test_should_continue_routes_continue_when_tool_calls_present() -> None:
@@ -121,3 +126,69 @@ def test_build_tracer_graph_executes_tool_node_when_tool_calls_present() -> None
     assert isinstance(result["messages"][1], ToolMessage)
     assert "boom" in str(result["messages"][1].content)
     assert result["messages"][2].content == "Trace analyzed"
+
+
+def _mock_clone_to_local_repo(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fake_clone(*, target_repo_url: str, repo_path: Path) -> None:
+        repo_path.mkdir(parents=True, exist_ok=True)
+        (repo_path / "README.md").write_text(
+            f"cloned from {target_repo_url}\n",
+            encoding="utf-8",
+        )
+        (repo_path / "src").mkdir(parents=True, exist_ok=True)
+        (repo_path / "src" / "app.py").write_text("print('sandbox')\n", encoding="utf-8")
+
+    monkeypatch.setattr(SandboxService, "_clone_repo", staticmethod(fake_clone))
+
+
+def test_build_tracer_graph_executes_codebase_tools_with_sandbox(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _mock_clone_to_local_repo(monkeypatch)
+    sandbox_service = SandboxService(default_target_repo_url="https://example.com/default.git")
+    session = sandbox_service.create_sandbox(SandboxCreateRequest())
+
+    call_count = 0
+
+    def model_invoke(state: dict[str, object], _: str, __: str) -> AIMessage:
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            return AIMessage(
+                content="List root",
+                tool_calls=[
+                    {
+                        "name": "list_directory",
+                        "args": {"sandbox_path": session.sandbox_path, "path": "."},
+                        "id": "tc-list",
+                    }
+                ],
+            )
+        if call_count == 2:
+            assert isinstance(state["messages"][-1], ToolMessage)
+            return AIMessage(
+                content="Read app file",
+                tool_calls=[
+                    {
+                        "name": "read_file",
+                        "args": {"sandbox_path": session.sandbox_path, "path": "src/app.py"},
+                        "id": "tc-read",
+                    }
+                ],
+            )
+
+        assert isinstance(state["messages"][-1], ToolMessage)
+        return AIMessage(content="Codebase inspected")
+
+    graph = build_tracer_graph(model_invoke=model_invoke, sandbox_service=sandbox_service)
+    result = graph.invoke({"messages": [], "run_id": "run-codebase", "current_trace_summary": None})
+
+    assert call_count == 3
+    assert len(result["messages"]) == 5
+    assert isinstance(result["messages"][1], ToolMessage)
+    assert "README.md" in str(result["messages"][1].content)
+    assert isinstance(result["messages"][3], ToolMessage)
+    assert "print('sandbox')" in str(result["messages"][3].content)
+    assert result["messages"][4].content == "Codebase inspected"
+
+    sandbox_service.teardown_sandbox(session)

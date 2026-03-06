@@ -6,6 +6,7 @@ import shutil
 import subprocess
 import tempfile
 import uuid
+from typing import Any
 from pathlib import Path
 
 from schemas.sandbox import (
@@ -114,6 +115,56 @@ class SandboxService:
         )
         return content
 
+    def list_directory(self, session: SandboxSession, path: str = ".") -> list[dict[str, Any]]:
+        resolved = self._resolve_within_root(Path(session.repo_path).resolve(), path)
+        if not resolved.exists():
+            raise FileNotFoundError(f"Directory not found: {path}")
+        if not resolved.is_dir():
+            raise NotADirectoryError(f"Path is not a directory: {path}")
+
+        entries: list[dict[str, Any]] = []
+        repo_root = Path(session.repo_path).resolve()
+        for entry in sorted(resolved.iterdir(), key=lambda item: item.name):
+            entry_type = "directory" if entry.is_dir() else "file"
+            relative_path = str(entry.relative_to(repo_root))
+            entries.append(
+                {
+                    "name": entry.name,
+                    "path": relative_path,
+                    "type": entry_type,
+                    "size_bytes": None if entry_type == "directory" else entry.stat().st_size,
+                }
+            )
+
+        logger.info(
+            "Listed directory in sandbox",
+            extra={
+                "sandbox_id": session.sandbox_id,
+                "path": path,
+                "resolved_path": str(resolved),
+                "entry_count": len(entries),
+            },
+        )
+        return entries
+
+    def list_directory_by_sandbox_path(
+        self,
+        *,
+        sandbox_path: str,
+        path: str = ".",
+    ) -> list[dict[str, Any]]:
+        session = self._session_from_sandbox_path(sandbox_path)
+        return self.list_directory(session, path)
+
+    def read_file_by_sandbox_path(
+        self,
+        *,
+        sandbox_path: str,
+        path: str,
+    ) -> str:
+        session = self._session_from_sandbox_path(sandbox_path)
+        return self.read_file(session, path)
+
     def write_file(self, session: SandboxSession, path: str, content: str) -> None:
         resolved = self._resolve_within_root(Path(session.repo_path).resolve(), path)
         resolved.parent.mkdir(parents=True, exist_ok=True)
@@ -170,3 +221,16 @@ class SandboxService:
                 },
             )
             raise RuntimeError(f"Failed to clone target repo: {target_repo_url}") from exc
+
+    @staticmethod
+    def _session_from_sandbox_path(sandbox_path: str) -> SandboxSession:
+        root = Path(sandbox_path).resolve()
+        repo_path = root / "repo"
+        if not repo_path.exists():
+            raise FileNotFoundError(f"Sandbox repo path not found: {repo_path}")
+        return SandboxSession(
+            sandbox_id=root.name,
+            sandbox_path=str(root),
+            repo_path=str(repo_path),
+            target_repo_url="unknown",
+        )

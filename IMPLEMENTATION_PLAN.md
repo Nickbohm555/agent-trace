@@ -2,7 +2,7 @@
 
 Tasks are in **recommended implementation order** (1…n). Each section = **one context window**. Complete one section at a time. Sections 22–23 add UI to run the tracer and view results.
 
-**Current section to work on:** Section 7.
+**Current section to work on:** Section 8.
 
 ---
 
@@ -228,7 +228,7 @@ The following sections implement a **tracing deep-agent** that consumes traces f
 
 **How to test:** Unit tests with mock sandbox; integration: agent lists dir and reads file in sandbox.
 
-**Test results:** (Add when section is complete.)
+**Test results:** `docker compose exec backend uv run pytest tests/tools/test_codebase_tools.py tests/services/test_sandbox_service.py tests/agents/test_langgraph_agent.py` → 11 passed (2026-03-06).
 
 ---
 

@@ -17,7 +17,9 @@ from agents.tracer_config import (
     resolve_reasoning_phase,
 )
 from agents.tracer_state import TracerState
+from services.sandbox_service import SandboxService
 from services.trace_storage_service import TraceStorageService
+from tools.codebase_tools import build_list_directory_tool, build_read_file_tool
 from tools.trace_tools import build_read_trace_tool
 
 logger = logging.getLogger(__name__)
@@ -56,12 +58,16 @@ def build_tracer_graph(
     model_invoke: ModelInvoke | None = None,
     reasoning_config: TracerReasoningConfig | None = None,
     trace_storage_service: TraceStorageService | None = None,
+    sandbox_service: SandboxService | None = None,
     tools: list[BaseTool] | None = None,
 ) -> Any:
     """Build the Section 4 LangGraph skeleton for the tracer deep-agent loop."""
     resolved_tools = list(tools or [])
     if trace_storage_service is not None:
         resolved_tools.append(build_read_trace_tool(trace_storage_service))
+    if sandbox_service is not None:
+        resolved_tools.append(build_list_directory_tool(sandbox_service))
+        resolved_tools.append(build_read_file_tool(sandbox_service))
 
     if agent_node is None:
         selected_reasoning_config = reasoning_config or TracerReasoningConfig()

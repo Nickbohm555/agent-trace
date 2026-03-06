@@ -42,6 +42,9 @@ def test_sandbox_write_read_run_and_teardown(monkeypatch: pytest.MonkeyPatch) ->
 
     service.write_file(session, "notes/output.txt", "sandbox-data")
     assert service.read_file(session, "notes/output.txt") == "sandbox-data"
+    entries = service.list_directory(session, "notes")
+    assert [entry["name"] for entry in entries] == ["output.txt"]
+    assert entries[0]["type"] == "file"
 
     command_result = service.run_command(
         session,
