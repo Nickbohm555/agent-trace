@@ -763,3 +763,51 @@
 **Operational note:**
 - Changed container: `backend`.
 - Restarted backend with `docker compose restart backend` and reviewed backend/frontend/db logs.
+
+## Section 19: Trace analyzer orchestration - fetch, analyze, synthesize
+
+**Depends on:** Sections 1, 2, 3, 4-18 (fetch, storage, sandbox, graph with tools/middleware, analysis, synthesis).
+
+**Single goal:** Implement the full Trace Analyzer flow: fetch traces from Langfuse -> store or pass to tracer -> run parallel error analysis -> main agent synthesizes -> produce harness change output (single orchestration entry point).
+
+**Deep-agent capability:** Trace Analyzer Skill - full orchestration: fetch traces -> store/load -> parallel error analysis -> synthesize -> harness change output (single entry point).
+
+**Details implemented:**
+- Added `src/backend/services/trace_analyzer_service.py` with a single orchestration entry point `TraceAnalyzerService.analyze(...)`.
+- Wired end-to-end flow inside one method:
+  - Fetch traces from Langfuse via `LangfuseTraceService` using `TraceQueryFilters`.
+  - Coerce missing trace `run_id` values to the requested run for consistent storage/load.
+  - Persist traces via `TraceStorageService.save_traces(...)`.
+  - Load traces for analysis via `TraceStorageService.load_traces(...)` (run_id-first, trace_id fallback).
+  - Create one sandbox via `SandboxService.create_sandbox(...)` and pass its `sandbox_path` into the tracer graph run.
+  - Invoke tracer graph (with existing tools/middleware/parallel analysis/synthesis wiring from prior sections) and parse structured `harness_change_set` output.
+  - Teardown sandbox in `finally` to ensure cleanup.
+- Added visibility logs at orchestration start and completion with run_id, trace counts, and synthesized change count.
+- Added request/response dataclasses in the same service for stable orchestration inputs/outputs:
+  - `TraceAnalyzerRequest`
+  - `TraceAnalyzerResult`
+- Added end-to-end orchestration test `src/backend/tests/services/test_trace_analyzer_service.py` using mocked Langfuse/storage/sandbox/graph to assert ordered invocation and structured output.
+
+**Test results:**
+- `docker compose exec backend uv run pytest tests/services/test_trace_analyzer_service.py`
+- Result: `1 passed in 2.10s` on 2026-03-06.
+
+**Useful logs (2026-03-06):**
+- `docker compose ps`
+  - `backend` up on `0.0.0.0:8001->8000/tcp`
+  - `frontend` up on `0.0.0.0:5174->5173/tcp`
+  - `db` healthy on `0.0.0.0:5433->5432/tcp`
+- Backend logs:
+  - `INFO  [alembic.runtime.migration] Context impl PostgresqlImpl.`
+  - `INFO: Uvicorn running on http://0.0.0.0:8000`
+  - `INFO: Application startup complete.`
+  - `WARNING: WatchFiles detected changes in 'services/trace_analyzer_service.py'. Reloading...`
+- Frontend logs:
+  - `VITE v7.3.1 ready in 178 ms`
+  - `Local: http://localhost:5173/`
+- DB logs:
+  - `database system is ready to accept connections`
+
+**Operational note:**
+- Changed container: `backend`.
+- Restarted `backend` with `docker compose restart backend` after implementation and verified `backend`, `frontend`, and `db` logs.
