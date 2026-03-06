@@ -2,7 +2,7 @@
 
 Tasks are in **recommended implementation order** (1…n). Each section = **one context window**. Complete one section at a time. Sections 22–23 add UI to run the tracer and view results.
 
-**Current section to work on:** Section 2.
+**Current section to work on:** Section 3.
 
 ---
 
@@ -73,7 +73,9 @@ The following sections implement a **tracing deep-agent** that consumes traces f
 
 **How to test:** Unit tests for storage service; migration up/down; load traces after ingest (Section 1) and assert round-trip.
 
-**Test results:** (Add when section is complete.)
+**Test results:**
+- `docker compose exec backend uv run alembic downgrade base && docker compose exec backend uv run alembic upgrade head && docker compose exec backend uv run alembic current` → downgraded and re-upgraded successfully, current revision `20260306_01` (2026-03-06).
+- `docker compose exec backend uv run pytest tests/services/test_langfuse_trace_service.py tests/services/test_trace_storage_service.py` → 6 passed (2026-03-06).
 
 ---
 

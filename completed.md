@@ -30,3 +30,39 @@
 
 **Operational note:**
 - During fresh bootstrap, backend initially failed because Alembic targeted `agent_trace` while Postgres initialized `agent_search` from `.env`; created missing DB `agent_trace` and restarted backend successfully.
+
+## Section 2: Trace schema and storage for analysis
+
+**Depends on:** Section 1 (ingestion and normalized schema).
+
+**Single goal:** Define a persistent schema for traces and store ingested traces so the tracer and parallel analyzers can query them.
+
+**Deep-agent capability:** Context/trace persistence; enables tracer and subagents to load traces by run/experiment.
+
+**Details implemented:**
+- Added SQLAlchemy ORM models in `src/backend/models.py` for `traces` and `trace_spans` including run/experiment identifiers, span payloads, tool calls, error summaries, token/cost fields, timestamps, and optional raw payload storage.
+- Added DB session utilities in `src/backend/db.py`.
+- Added Alembic migration `src/backend/alembic/versions/20260306_01_add_trace_tables.py` with upgrade/downgrade for both trace tables and indexes.
+- Updated Alembic runtime config in `src/backend/alembic/env.py` to load metadata from ORM models and honor `DATABASE_URL` from environment.
+- Extended trace schemas in `src/backend/schemas/trace.py` with `TraceStorageQuery` and `StoredTrace`.
+- Added `src/backend/services/trace_storage_service.py` with save/load APIs for traces by `run_id`, `experiment_name`, or explicit `trace_ids`, including upsert behavior and structured logging.
+- Added unit coverage in `src/backend/tests/services/test_trace_storage_service.py` for round-trip persistence, upsert behavior, and query filtering.
+
+**Test results:**
+- `docker compose exec backend uv run alembic downgrade base && docker compose exec backend uv run alembic upgrade head && docker compose exec backend uv run alembic current`
+- Result: downgrade/upgrade successful; current revision `20260306_01 (head)` on 2026-03-06.
+- `docker compose exec backend uv run pytest tests/services/test_langfuse_trace_service.py tests/services/test_trace_storage_service.py`
+- Result: `6 passed in 0.54s` on 2026-03-06.
+
+**Useful logs (2026-03-06):**
+- Backend:
+  - `INFO  [alembic.runtime.migration] Running upgrade  -> 20260306_01, add trace storage tables`
+  - `INFO:     Uvicorn running on http://0.0.0.0:8000`
+  - `INFO:     Application startup complete.`
+- DB:
+  - `List of relations: alembic_version, trace_spans, traces`
+- Frontend:
+  - `VITE v7.3.1  ready in 373 ms`
+
+**Operational note:**
+- Earlier startup failures in this loop showed `database "agent_trace" does not exist`; this was addressed by making Alembic use the container `DATABASE_URL` from environment so startup and migrations align with configured DB name.
