@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Annotated
+from typing import Any
 
 from langchain_core.messages import AnyMessage
 from langgraph.graph.message import add_messages
@@ -30,3 +31,6 @@ class TracerState(TypedDict, total=False):
     edit_file_counts: dict[str, int]
     loop_detection_threshold: int
     loop_detection_nudged_files: list[str]
+    parallel_error_findings: list[dict[str, Any]]
+    parallel_error_count: int
+    parallel_analysis_completed: bool

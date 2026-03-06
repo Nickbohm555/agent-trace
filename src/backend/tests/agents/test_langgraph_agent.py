@@ -5,11 +5,16 @@ from pathlib import Path
 import pytest
 from langchain_core.messages import AIMessage, SystemMessage, ToolMessage
 from langchain_core.tools import StructuredTool
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
 
 from agents.langgraph_agent import build_tracer_graph, should_continue
 from agents.tracer_config import TracerReasoningConfig
+from models import Base
 from schemas.sandbox import SandboxCreateRequest
+from schemas.trace import NormalizedTrace, NormalizedTraceError
 from services.sandbox_service import SandboxService
+from services.trace_storage_service import TraceStorageService
 
 
 def test_should_continue_routes_continue_when_tool_calls_present() -> None:
@@ -442,3 +447,45 @@ def test_build_tracer_graph_injects_loop_detection_message_before_repeated_edit(
     )
     assert result["edit_file_counts"]["src/app.py"] == 1
     assert "src/app.py" in result["loop_detection_nudged_files"]
+
+
+def test_build_tracer_graph_injects_parallel_error_findings_from_trace_storage() -> None:
+    engine = create_engine("sqlite+pysqlite:///:memory:", future=True)
+    Base.metadata.create_all(engine)
+    session_factory = sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
+    trace_storage_service = TraceStorageService(session_factory=session_factory)
+    trace_storage_service.save_traces(
+        [
+            NormalizedTrace(
+                trace_id="trace-err-1",
+                run_id="run-error-analysis",
+                error=NormalizedTraceError(message="request timeout", error_type="TimeoutError"),
+            )
+        ]
+    )
+
+    observed_findings: list[dict[str, object]] = []
+
+    def model_invoke(state: dict[str, object], _: str, __: str) -> AIMessage:
+        nonlocal observed_findings
+        observed_findings = list(state.get("parallel_error_findings", []))
+        return AIMessage(content="Parallel findings captured")
+
+    graph = build_tracer_graph(
+        model_invoke=model_invoke,
+        trace_storage_service=trace_storage_service,
+    )
+    result = graph.invoke(
+        {
+            "messages": [],
+            "run_id": "run-error-analysis",
+            "current_trace_summary": None,
+            "pre_completion_verified": True,
+        }
+    )
+
+    assert len(observed_findings) == 1
+    assert observed_findings[0]["trace_id"] == "trace-err-1"
+    assert observed_findings[0]["suggested_fix_category"] == "timeout_or_retry_policy"
+    assert result["parallel_analysis_completed"] is True
+    assert result["parallel_error_count"] == 1

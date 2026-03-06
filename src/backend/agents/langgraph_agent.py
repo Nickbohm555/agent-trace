@@ -17,12 +17,17 @@ from agents.tracer_config import (
     resolve_reasoning_phase,
 )
 from agents.tracer_context import build_local_context_message, contains_local_context_message
+from agents.error_analysis_agent import (
+    analyze_errors_in_parallel,
+    collect_error_tasks,
+)
 from agents.tracer_middleware import (
     apply_loop_detection_injection,
     apply_time_budget_injection,
     pre_completion_check_node,
     should_inject_pre_completion_checklist,
 )
+from schemas.trace import TraceStorageQuery
 from agents.tracer_prompts import build_tracer_system_prompt
 from agents.tracer_state import TracerState
 from services.sandbox_service import SandboxService
@@ -109,6 +114,40 @@ def _inject_local_context(
     return contextual_state
 
 
+def _inject_parallel_error_analysis(
+    state: TracerState,
+    *,
+    trace_storage_service: TraceStorageService | None,
+) -> TracerState:
+    if trace_storage_service is None:
+        return state
+    if state.get("parallel_analysis_completed"):
+        return state
+
+    run_id = state.get("run_id")
+    if not run_id:
+        logger.info("Skipping parallel error analysis because run_id is missing")
+        return state
+
+    traces = trace_storage_service.load_traces(TraceStorageQuery(run_id=run_id, limit=200))
+    error_tasks = collect_error_tasks(traces)
+    findings = analyze_errors_in_parallel(error_tasks)
+
+    updated_state: TracerState = dict(state)
+    updated_state["parallel_error_count"] = len(error_tasks)
+    updated_state["parallel_error_findings"] = [finding.to_payload() for finding in findings]
+    updated_state["parallel_analysis_completed"] = True
+    logger.info(
+        "Injected parallel error-analysis findings into tracer state",
+        extra={
+            "run_id": run_id,
+            "error_count": len(error_tasks),
+            "finding_count": len(findings),
+        },
+    )
+    return updated_state
+
+
 def build_tracer_graph(
     agent_node: Callable[[TracerState], dict[str, list[AnyMessage]]] | None = None,
     *,
@@ -140,7 +179,11 @@ def build_tracer_graph(
                 state.get("reasoning_level"),
                 fallback=selected_reasoning_config.level_for_phase(phase),
             )
-            contextual_state = _inject_local_context(state, sandbox_service=sandbox_service)
+            analyzed_state = _inject_parallel_error_analysis(
+                state,
+                trace_storage_service=trace_storage_service,
+            )
+            contextual_state = _inject_local_context(analyzed_state, sandbox_service=sandbox_service)
             prompted_state = _inject_system_prompt(contextual_state, selected_system_prompt)
             budgeted_state, time_budget_message = apply_time_budget_injection(prompted_state)
             invoke_state = budgeted_state
@@ -172,6 +215,12 @@ def build_tracer_graph(
                 updates["time_budget_last_notice_step"] = loop_detection_state["time_budget_last_notice_step"]
             if contextual_state.get("local_context") and not state.get("local_context"):
                 updates["local_context"] = contextual_state["local_context"]
+            if "parallel_error_count" in analyzed_state:
+                updates["parallel_error_count"] = analyzed_state["parallel_error_count"]
+            if "parallel_error_findings" in analyzed_state:
+                updates["parallel_error_findings"] = analyzed_state["parallel_error_findings"]
+            if analyzed_state.get("parallel_analysis_completed"):
+                updates["parallel_analysis_completed"] = True
             return updates
 
         resolved_agent_node = configured_agent_node

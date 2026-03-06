@@ -616,3 +616,53 @@
 **Operational note:**
 - Changed container: `backend`.
 - Restarted backend with `docker compose restart backend` and reviewed backend/frontend/db logs after restart.
+
+## Section 16: Parallel error-analysis sub-agents
+
+**Depends on:** Sections 1–2 (traces), Section 4 (graph). Section 17 (harness change schema) can be done before or after; schema is needed for Section 18 synthesis output.
+
+**Single goal:** Spawn multiple worker agents to analyze different trace errors in parallel; main tracer uses their outputs (Trace Analyzer Skill pattern from article).
+
+**Deep-agent capability:** Task delegation (subagents) — parallel error-analysis workers; Trace Analyzer Skill (spawn analyzers → main agent synthesizes).
+
+**Details implemented:**
+- Added `src/backend/agents/error_analysis_agent.py` with:
+  - `collect_error_tasks(...)` to extract and deduplicate trace errors into worker tasks.
+  - `analyze_errors_in_parallel_async(...)` + `analyze_errors_in_parallel(...)` that run per-error analyzers concurrently with `asyncio.gather` and bounded concurrency.
+  - Structured `ErrorAnalysisFinding` payloads containing trace/scope identifiers, root-cause summary, suggested fix category, and confidence.
+- Updated `src/backend/agents/langgraph_agent.py` to orchestrate Section 16 behavior:
+  - Loads persisted traces by `run_id` via `TraceStorageService`.
+  - Runs parallel error analysis once per run (guarded by `parallel_analysis_completed`).
+  - Injects `parallel_error_findings` and `parallel_error_count` into tracer state before model invocation.
+  - Added logging for skipped analysis (missing run_id) and successful finding injection.
+- Extended `src/backend/agents/tracer_state.py` with state fields for `parallel_error_findings`, `parallel_error_count`, and `parallel_analysis_completed`.
+- Added tests:
+  - `src/backend/tests/agents/test_error_analysis_agent.py` validates error-task deduplication and true concurrent execution across multiple workers.
+  - `src/backend/tests/agents/test_langgraph_agent.py` validates graph integration by persisting a failing trace, running tracer graph, and asserting parallel findings are visible in model input and returned state.
+
+**Test results:**
+- `docker compose exec backend uv run pytest tests/agents/test_error_analysis_agent.py tests/agents/test_langgraph_agent.py`
+- Result: `15 passed in 1.10s` on 2026-03-06.
+
+**Useful logs (2026-03-06):**
+- Container status (`docker compose ps`) after restart:
+  - `backend` up on `0.0.0.0:8001->8000/tcp`
+  - `frontend` up on `0.0.0.0:5174->5173/tcp`
+  - `db` healthy on `0.0.0.0:5433->5432/tcp`
+- Backend logs (`docker compose logs --tail=140 backend frontend db`):
+  - `INFO  [alembic.runtime.migration] Running upgrade  -> 20260306_01, add trace storage tables`
+  - `INFO:     Uvicorn running on http://0.0.0.0:8000`
+  - `INFO:     Application startup complete.`
+  - `INFO:     172.66.0.243:39702 - "GET /docs HTTP/1.1" 200 OK`
+  - `WARNING:  WatchFiles detected changes ... Reloading...` (expected during iterative edits)
+- Frontend logs:
+  - `VITE v7.3.1 ready`
+  - `Local: http://localhost:5173/`
+- DB logs:
+  - `database system is ready to accept connections`
+- Backend readiness:
+  - `curl -sf -o /dev/null -w "%{http_code}" http://localhost:8001/docs` returned `200`.
+
+**Operational note:**
+- Changed container: `backend`.
+- Restarted changed service with `docker compose restart backend` and reviewed backend/frontend/db logs.
