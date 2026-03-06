@@ -902,3 +902,40 @@
 
 ### Notes
 - Section E1 is complete and passing with live Docker verification.
+
+## Section E2: E2E — Frontend loads at configured URL
+
+**Single goal:** Verify the frontend is reachable at the configured URL and returns a non-error page.
+
+### Completed work
+- Reused existing Docker Compose and Vite setup; no source code changes were needed for this verification-only section.
+- Confirmed frontend root is reachable at `http://localhost:5174` with HTTP 200.
+- Confirmed returned payload is valid HTML for the React app (`<title>agent-trace</title>` and `<div id="root"></div>` present).
+
+### Codebase reuse/search notes (pre-change)
+- Searched existing implementation and tests before deciding no code changes were required:
+  - `src/frontend/src/utils/api.ts` already targets backend API base.
+  - `src/frontend/index.html` already defines app shell/title used in this check.
+  - `src/backend/routers/health.py` and existing API tests confirm service scaffolding is already in place.
+
+### Validation commands and outcomes
+- `docker compose down -v --rmi all && docker compose build && docker compose up -d`
+  - Outcome: success; rebuilt and started fresh containers (`db`, `backend`, `frontend`, `chrome`).
+- `docker compose ps`
+  - Outcome: all services `Up`; `db` reported `healthy`.
+- `curl -s -o /tmp/e2_frontend_body.html -w '%{http_code}' http://localhost:5174`
+  - Outcome: `200`.
+- `head -n 20 /tmp/e2_frontend_body.html`
+  - Outcome: HTML document containing `<title>agent-trace</title>` and `<div id="root"></div>`.
+
+### Container logs reviewed
+- `docker compose logs --tail=120 frontend`
+  - Outcome: Vite dev server ready (`VITE v7.3.1 ready`, listening on `0.0.0.0:5173`).
+- `docker compose logs --tail=120 backend`
+  - Outcome: Alembic migration ran and Uvicorn startup completed.
+- `docker compose logs --tail=120 db`
+  - Outcome: PostgreSQL initialized and ready to accept connections.
+  - Note: initialization showed one transient `FATAL: database "agent_search" does not exist` during init scripting, followed by successful database creation and healthy startup.
+
+### Notes
+- Containers changed in this iteration due explicit fresh restart/rebuild before work; no subsequent code changes required any additional service restarts.
