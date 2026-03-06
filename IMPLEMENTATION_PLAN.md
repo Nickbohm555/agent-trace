@@ -2,7 +2,7 @@
 
 Tasks are in **recommended implementation order** (1…n). Each section = **one context window**. Complete one section at a time. Sections 22–23 add UI to run the tracer and view results.
 
-**Current section to work on:** Section 5.
+**Current section to work on:** Section 6.
 
 ---
 
@@ -168,7 +168,7 @@ The following sections implement a **tracing deep-agent** that consumes traces f
 
 **How to test:** Run with different configs; assert LLM receives different params or that config is read correctly (mock if needed).
 
-**Test results:** (Add when section is complete.)
+**Test results:** `docker compose exec backend uv run pytest tests/agents/test_langgraph_agent.py tests/agents/test_tracer_config.py` → 7 passed (2026-03-06).
 
 ---
 

@@ -7,9 +7,18 @@ from typing import Any, Literal
 from langchain_core.messages import AIMessage, AnyMessage
 from langgraph.graph import END, START, StateGraph
 
+from agents.tracer_config import (
+    ReasoningLevel,
+    ReasoningPhase,
+    TracerReasoningConfig,
+    resolve_reasoning_level,
+    resolve_reasoning_phase,
+)
 from agents.tracer_state import TracerState
 
 logger = logging.getLogger(__name__)
+
+ModelInvoke = Callable[[TracerState, ReasoningPhase, ReasoningLevel], AIMessage]
 
 
 def should_continue(state: TracerState) -> Literal["continue", "end"]:
@@ -32,12 +41,40 @@ def default_agent_node(_: TracerState) -> dict[str, list[AIMessage]]:
     return {"messages": [AIMessage(content="Tracer graph skeleton response.")]}
 
 
+def default_model_invoke(_: TracerState, __: ReasoningPhase, ___: ReasoningLevel) -> AIMessage:
+    """Default model adapter placeholder until tool-bound agent execution is added."""
+    return AIMessage(content="Tracer graph skeleton response.")
+
+
 def build_tracer_graph(
     agent_node: Callable[[TracerState], dict[str, list[AnyMessage]]] | None = None,
+    *,
+    model_invoke: ModelInvoke | None = None,
+    reasoning_config: TracerReasoningConfig | None = None,
 ) -> Any:
     """Build the Section 4 LangGraph skeleton for the tracer deep-agent loop."""
+    if agent_node is None:
+        selected_reasoning_config = reasoning_config or TracerReasoningConfig()
+        selected_model_invoke = model_invoke or default_model_invoke
+
+        def configured_agent_node(state: TracerState) -> dict[str, list[AnyMessage]]:
+            phase = resolve_reasoning_phase(state.get("reasoning_phase"))
+            level = resolve_reasoning_level(
+                state.get("reasoning_level"),
+                fallback=selected_reasoning_config.level_for_phase(phase),
+            )
+            logger.info(
+                "Executing tracer agent with reasoning configuration",
+                extra={"phase": phase, "reasoning_level": level, "run_id": state.get("run_id")},
+            )
+            return {"messages": [selected_model_invoke(state, phase, level)]}
+
+        resolved_agent_node = configured_agent_node
+    else:
+        resolved_agent_node = agent_node
+
     graph = StateGraph(TracerState)
-    graph.add_node("agent", agent_node or default_agent_node)
+    graph.add_node("agent", resolved_agent_node)
     graph.add_edge(START, "agent")
     graph.add_conditional_edges(
         "agent",

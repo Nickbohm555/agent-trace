@@ -137,3 +137,41 @@
 
 **Operational note:**
 - Changed container: `backend`. Restarted `backend` after implementation and verified `docker compose ps` plus backend/frontend/db logs.
+
+## Section 5: Reasoning budget configuration
+
+**Depends on:** Section 4 (graph exists to receive config).
+
+**Single goal:** Make reasoning compute configurable (e.g. high for planning and verification, lower for implementation) to balance quality and token/time (per article “reasoning sandwich”).
+
+**Deep-agent capability:** Context and token management — reasoning budget; configurable reasoning level and optional “reasoning sandwich.”
+
+**Details implemented:**
+- Added `src/backend/agents/tracer_config.py` with phase-aware reasoning configuration (`planning`, `implementation`, `verification`) and reasoning levels (`low`, `medium`, `high`, `xhigh`).
+- Implemented default “reasoning sandwich” mapping (`xhigh`–`high`–`xhigh`) plus run-level override parsing via `TracerReasoningConfig.from_run_config(...)`.
+- Added robust coercion/validation helpers for reasoning phase and level with warning logs on invalid inputs.
+- Extended `src/backend/agents/tracer_state.py` with optional reasoning fields (`reasoning_phase`, `reasoning_level`, `reasoning_phase_levels`).
+- Updated `src/backend/agents/langgraph_agent.py` to resolve phase + effective reasoning budget per invocation and pass it to an abstract model adapter hook (`model_invoke`) so different backends can honor settings.
+- Added structured logging in agent execution for resolved reasoning configuration visibility.
+- Expanded tests in `src/backend/tests/agents/test_langgraph_agent.py` to verify phase-budget mapping and state-level override behavior.
+- Added `src/backend/tests/agents/test_tracer_config.py` for default mapping, run-config overrides, and invalid phase fallback.
+
+**Test results:**
+- `docker compose exec backend uv run pytest tests/agents/test_langgraph_agent.py tests/agents/test_tracer_config.py`
+- Result: `7 passed in 0.35s` on 2026-03-06.
+
+**Useful logs (2026-03-06):**
+- Backend:
+  - `INFO  [alembic.runtime.migration] Context impl PostgresqlImpl.`
+  - `INFO:     Uvicorn running on http://0.0.0.0:8000`
+  - `INFO:     Application startup complete.`
+  - `WARNING:  WatchFiles detected changes in 'agents/tracer_config.py'. Reloading...` (expected during iteration)
+- Frontend:
+  - `VITE v7.3.1  ready in 190 ms`
+  - `Local: http://localhost:5173/`
+- DB:
+  - `database system is ready to accept connections`
+
+**Operational note:**
+- Changed container: `backend`.
+- Restarted backend with `docker compose restart backend` and verified logs for `backend`, `frontend`, and `db` plus `docker compose ps` healthy status.
