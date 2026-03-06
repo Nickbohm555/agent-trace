@@ -5,8 +5,12 @@ from datetime import UTC, datetime
 from fastapi.testclient import TestClient
 
 from main import app
-from routers.tracer import get_trace_analyzer_service
+from routers.tracer import (
+    get_harness_change_review_service,
+    get_trace_analyzer_service,
+)
 from schemas.harness_changes import HarnessChangeSet
+from services.harness_change_review_service import HarnessChangeReviewService
 from services.trace_analyzer_service import (
     TraceAnalyzerRequest,
     TraceAnalyzerResult,
@@ -37,7 +41,9 @@ class FakeTraceAnalyzerService:
 
 def test_run_tracer_endpoint_calls_trace_analyzer_service_and_returns_payload() -> None:
     fake_service = FakeTraceAnalyzerService()
+    review_service = HarnessChangeReviewService(auto_apply_enabled=False)
     app.dependency_overrides[get_trace_analyzer_service] = lambda: fake_service
+    app.dependency_overrides[get_harness_change_review_service] = lambda: review_service
     client = TestClient(app)
     try:
         response = client.post(
@@ -77,7 +83,9 @@ def test_run_tracer_endpoint_calls_trace_analyzer_service_and_returns_payload() 
 
 def test_run_tracer_endpoint_accepts_trace_ids_without_explicit_run_id() -> None:
     fake_service = FakeTraceAnalyzerService()
+    review_service = HarnessChangeReviewService(auto_apply_enabled=False)
     app.dependency_overrides[get_trace_analyzer_service] = lambda: fake_service
+    app.dependency_overrides[get_harness_change_review_service] = lambda: review_service
     client = TestClient(app)
     try:
         response = client.post(
@@ -100,3 +108,68 @@ def test_run_tracer_endpoint_rejects_missing_run_id_and_trace_ids() -> None:
     response = client.post("/api/tracer/run", json={"target_repo_url": "https://example.com/repo.git"})
 
     assert response.status_code == 422
+
+
+def test_tracer_proposed_changes_review_flow_applies_only_after_approve() -> None:
+    fake_service = FakeTraceAnalyzerService()
+    review_service = HarnessChangeReviewService(auto_apply_enabled=False)
+    app.dependency_overrides[get_trace_analyzer_service] = lambda: fake_service
+    app.dependency_overrides[get_harness_change_review_service] = lambda: review_service
+    client = TestClient(app)
+    try:
+        run_response = client.post(
+            "/api/tracer/run",
+            json={
+                "run_id": "run-review-001",
+                "trace_ids": ["trace-1"],
+            },
+        )
+        assert run_response.status_code == 200
+
+        proposed_response = client.get("/api/tracer/run-review-001/proposed-changes")
+        assert proposed_response.status_code == 200
+        proposed_payload = proposed_response.json()
+        assert proposed_payload["status"] == "pending"
+        assert proposed_payload["applied_at"] is None
+
+        approved_response = client.post(
+            "/api/tracer/run-review-001/approval",
+            json={"decision": "approve", "apply": True},
+        )
+        assert approved_response.status_code == 200
+        approved_payload = approved_response.json()
+        assert approved_payload["status"] == "applied"
+        assert approved_payload["approved_at"] is not None
+        assert approved_payload["applied_at"] is not None
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_tracer_proposed_changes_reject_does_not_apply() -> None:
+    fake_service = FakeTraceAnalyzerService()
+    review_service = HarnessChangeReviewService(auto_apply_enabled=False)
+    app.dependency_overrides[get_trace_analyzer_service] = lambda: fake_service
+    app.dependency_overrides[get_harness_change_review_service] = lambda: review_service
+    client = TestClient(app)
+    try:
+        run_response = client.post(
+            "/api/tracer/run",
+            json={
+                "run_id": "run-review-002",
+                "trace_ids": ["trace-2"],
+            },
+        )
+        assert run_response.status_code == 200
+
+        rejected_response = client.post(
+            "/api/tracer/run-review-002/approval",
+            json={"decision": "reject", "apply": True},
+        )
+        assert rejected_response.status_code == 200
+        rejected_payload = rejected_response.json()
+        assert rejected_payload["status"] == "rejected"
+        assert rejected_payload["approved_at"] is None
+        assert rejected_payload["applied_at"] is None
+        assert rejected_payload["rejected_at"] is not None
+    finally:
+        app.dependency_overrides.clear()

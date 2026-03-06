@@ -752,3 +752,59 @@
 
 ### Notes
 - Section 5 is complete: tracer output now supports deterministic aggregation of agent suggestions plus optional external feedback without changing `HarnessChangeSet` shape.
+
+## Section 6: API for proposed changes and approve/apply (human-in-the-loop)
+
+**Single goal:** Expose an API so proposed harness changes can be reviewed and applied only after approval (or document auto-apply mode).
+
+**Details:**
+- Add or extend endpoints: e.g. get proposed harness changes for a run, and approve/apply (or reject). Apply harness changes only when approval is given (or when a documented auto-apply mode is enabled).
+- Do not change the shape of `HarnessChangeSet`; only add the flow: propose → (optional human review) → approve/apply or reject.
+
+### Completed work
+- Added `src/backend/services/harness_change_review_service.py` to store and review proposed `HarnessChangeSet` values per `run_id`.
+  - Tracks review state as `pending`, `approved`, `applied`, or `rejected`.
+  - Tracks audit timestamps (`approved_at`, `rejected_at`, `applied_at`).
+  - Supports documented auto-apply mode via `TRACER_AUTO_APPLY_CHANGES` env var.
+- Extended `src/backend/schemas/tracer_api.py` with new API models:
+  - `TracerProposedChangesResponse`
+  - `TracerProposalApprovalRequest`
+  - `TracerProposalStatus`
+- Extended `src/backend/routers/tracer.py`:
+  - Existing `POST /api/tracer/run` now records proposed harness changes for later review.
+  - Added `GET /api/tracer/{run_id}/proposed-changes` to fetch the current proposal + status.
+  - Added `POST /api/tracer/{run_id}/approval` to approve/apply or reject.
+  - Added route-level visibility logs for storing, fetching, and reviewing proposals.
+- Updated API tests in `src/backend/tests/api/test_tracer_run.py`:
+  - Verified run creation records a proposal.
+  - Verified `approve + apply=true` transitions proposal to `applied`.
+  - Verified `reject` never applies (`applied_at` remains null).
+
+### Validation commands and outcomes
+- `docker compose exec backend uv run pytest tests/api/test_tracer_run.py`
+  - Outcome: success (`5 passed in 1.76s`).
+- Live API sanity check:
+  - `curl -X POST http://localhost:8001/api/tracer/run ...` (run_id `run-live-approval-1`) -> proposal created.
+  - `curl http://localhost:8001/api/tracer/run-live-approval-1/proposed-changes` -> status `pending`.
+  - `curl -X POST http://localhost:8001/api/tracer/run-live-approval-1/approval ...` -> status `applied`.
+
+### Container restart/rebuild logs
+- Pre-task full clean restart (fresh builds/logs):
+  - `docker compose down -v --rmi all`
+  - `docker compose build`
+  - `docker compose up -d`
+- Post-change refresh (changed container scope: backend-only code + backend tests):
+  - `docker compose restart backend`
+- Running state check:
+  - `docker compose ps` -> `db`, `backend`, `frontend`, `chrome` all `Up` (`db` healthy).
+- Logs reviewed:
+  - `docker compose logs --tail 200 backend` -> uvicorn startup/reload healthy; successful requests for:
+    - `POST /api/tracer/run`
+    - `GET /api/tracer/run-live-approval-1/proposed-changes`
+    - `POST /api/tracer/run-live-approval-1/approval`
+  - `docker compose logs --tail 60 frontend` -> Vite dev server ready.
+  - `docker compose logs --tail 60 db` -> PostgreSQL ready to accept connections.
+
+### Notes
+- Apply transitions now occur only through explicit approve action unless `TRACER_AUTO_APPLY_CHANGES` is enabled.
+- The live tracer run used for sanity checks logged expected fallback behavior when model credentials are missing, but API proposal/approval flow completed successfully.

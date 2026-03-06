@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from datetime import datetime
+from enum import Enum
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -46,3 +48,29 @@ class TracerRunResponse(BaseModel):
     loaded_trace_count: int
     harness_change_set: HarnessChangeSet
     improvement_metrics: ImprovementMetrics | None = None
+
+
+class TracerProposalStatus(str, Enum):
+    pending = "pending"
+    approved = "approved"
+    applied = "applied"
+    rejected = "rejected"
+
+
+class TracerProposedChangesResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    run_id: str
+    status: TracerProposalStatus
+    auto_apply_enabled: bool = False
+    harness_change_set: HarnessChangeSet
+    approved_at: datetime | None = None
+    rejected_at: datetime | None = None
+    applied_at: datetime | None = None
+
+
+class TracerProposalApprovalRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    decision: Literal["approve", "reject"]
+    apply: bool = True
