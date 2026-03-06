@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import get_origin, get_type_hints
+from typing import Annotated, get_args, get_origin, get_type_hints
 
 import pytest
 from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
@@ -101,8 +101,8 @@ def test_build_deep_agent_tracer_propagates_tracer_state_fields(
     assert result["max_runtime_seconds"] == 120
     assert result["max_steps"] == 8
     assert result["time_budget_notice_interval_steps"] == 2
-    assert result["agent_step_count"] == 1
-    assert result["time_budget_last_notice_step"] == 0
+    assert result["agent_step_count"] == 2
+    assert result["time_budget_last_notice_step"] == 2
     assert result["edit_file_counts"] == {"src/main.py": 3}
     assert result["loop_detection_threshold"] == 10
     assert result["loop_detection_nudged_files"] == ["src/main.py"]
@@ -137,6 +137,33 @@ def test_build_deep_agent_tracer_injects_pre_completion_checklist_before_end(
     assert result["messages"][-1].content == "Verification completed."
 
 
+def test_build_deep_agent_tracer_injects_time_budget_warning_and_updates_step_count(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_bind_tools(monkeypatch)
+    graph = build_deep_agent_tracer(
+        model=FakeMessagesListChatModel(
+            responses=[AIMessage(content="Time budget acknowledged.")],
+        )
+    )
+
+    result = graph.invoke(
+        {
+            "messages": [HumanMessage(content="Proceed quickly")],
+            "max_steps": 1,
+            "agent_step_count": 0,
+            "pre_completion_verified": True,
+        }
+    )
+
+    assert result["agent_step_count"] == 1
+    assert result["time_budget_last_notice_step"] == 1
+    assert any(
+        isinstance(message, SystemMessage) and "Time budget status:" in str(message.content)
+        for message in result["messages"]
+    )
+
+
 def test_build_deep_agent_tracer_uses_tracer_system_prompt(monkeypatch: pytest.MonkeyPatch) -> None:
     captured: dict[str, object] = {}
 
@@ -158,8 +185,9 @@ def test_build_deep_agent_tracer_uses_tracer_system_prompt(monkeypatch: pytest.M
 
 
 def test_tracer_state_messages_is_plain_list_contract() -> None:
-    messages_hint = get_type_hints(TracerState)["messages"]
-    assert get_origin(messages_hint) is list
+    messages_hint = get_type_hints(TracerState, include_extras=True)["messages"]
+    assert get_origin(messages_hint) is Annotated
+    assert get_origin(get_args(messages_hint)[0]) is list
 
 
 def test_build_deep_agent_tracer_registers_tracer_tools(monkeypatch: pytest.MonkeyPatch) -> None:

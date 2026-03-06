@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Annotated, Any
 
 from langchain_core.messages import AnyMessage
+from langgraph.graph.message import add_messages
 from typing_extensions import TypedDict
 
 from agents.tracer_config import ReasoningLevel, ReasoningPhase
@@ -11,7 +12,7 @@ from agents.tracer_config import ReasoningLevel, ReasoningPhase
 class TracerState(TypedDict, total=False):
     """Canonical tracer state contract for the deep-agent graph."""
 
-    messages: list[AnyMessage]
+    messages: Annotated[list[AnyMessage], add_messages]
     current_trace_summary: str | None
     run_id: str
     sandbox_path: str

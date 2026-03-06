@@ -132,3 +132,47 @@
 
 ### Notes
 - Section 4 is complete and keeps deep-agent architecture intact while reusing existing checklist helper logic.
+
+## Section 5: Migrate time-budget injection to deep-agent middleware
+
+**Single goal:** Inject time-remaining or step-remaining warnings into the tracer’s context in the deep-agent path so the agent shifts to verification and submission under limits.
+
+### Completed work
+- Added `TracerTimeBudgetMiddleware` in `src/backend/agents/deep_agent_tracer.py`.
+- Wired the middleware into `build_deep_agent_tracer(...)` so it runs for each model turn.
+- Middleware reuses existing time-budget helpers from `src/backend/agents/tracer_middleware.py` via `apply_time_budget_injection(...)`.
+- Middleware now updates deep-agent state for:
+  - `run_started_at_epoch_seconds`
+  - `agent_step_count`
+  - `time_budget_last_notice_step` (when notice emitted)
+- Middleware appends a time-budget `SystemMessage` when helper conditions are met.
+- Added test `test_build_deep_agent_tracer_injects_time_budget_warning_and_updates_step_count` in `tests/agents/test_deep_agent_tracer.py`.
+- Fixed deep-agent message-state compatibility discovered in fresh rebuild:
+  - Restored `TracerState.messages` to `Annotated[list[AnyMessage], add_messages]` so deep-agent middleware receives iterable message lists instead of `Overwrite(...)` wrappers.
+  - Updated state-contract test to assert list contract with reducer metadata and updated propagation test expectations for incremented step count.
+
+### Validation commands and outcomes
+- `docker compose exec backend uv run pytest src/backend/tests/agents/test_deep_agent_tracer.py`
+  - Outcome: failed (incorrect path in container; file not found).
+- `docker compose exec backend uv run pytest tests/agents/test_deep_agent_tracer.py`
+  - Outcome: initially failed (`10 failed, 3 passed`) due `Overwrite` message-wrapper runtime errors; fixed in this section.
+- `docker compose exec backend uv run pytest tests/agents/test_deep_agent_tracer.py`
+  - Outcome: success (`13 passed in 2.76s`).
+
+### Container restart/rebuild logs
+- Pre-task full clean restart (fresh builds/logs):
+  - `docker compose down -v --rmi all`
+  - `docker compose build`
+  - `docker compose up -d`
+  - `docker compose ps` -> `db`, `backend`, `frontend`, and `chrome` all `Up` (`db` healthy).
+- Post-change runtime refresh:
+  - `docker compose restart backend`
+- Post-change logs reviewed:
+  - `docker compose logs --no-color --tail=200 backend frontend db`
+  - Backend: Alembic migration context loaded; Uvicorn startup complete; watch reloads after edited files; final server process running.
+  - Frontend: Vite dev server ready.
+  - DB: PostgreSQL ready to accept connections.
+
+### Notes
+- Section 5 is complete and keeps deep-agent architecture intact by reusing existing time-budget helper logic via middleware.
+- The fresh-rebuild compatibility fix for `TracerState.messages` was necessary to keep deep-agent built-in summarization middleware stable.

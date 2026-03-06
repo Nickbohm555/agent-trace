@@ -20,6 +20,7 @@ from agents.tracer_config import (
 )
 from agents.tracer_context import build_local_context_message, contains_local_context_message
 from agents.tracer_middleware import (
+    apply_time_budget_injection,
     build_pre_completion_checklist_message,
     should_inject_pre_completion_checklist,
 )
@@ -199,6 +200,23 @@ class TracerReasoningBudgetMiddleware(AgentMiddleware[TracerState, Any, Any]):
         return resolved_levels
 
 
+class TracerTimeBudgetMiddleware(AgentMiddleware[TracerState, Any, Any]):
+    """Apply tracer time/step budget updates and inject warning context when needed."""
+
+    def before_model(self, state: TracerState, runtime: Any) -> dict[str, Any] | None:
+        del runtime
+        updated_state, budget_message = apply_time_budget_injection(state)
+        updates: dict[str, Any] = {
+            "run_started_at_epoch_seconds": updated_state.get("run_started_at_epoch_seconds"),
+            "agent_step_count": updated_state.get("agent_step_count"),
+        }
+        if "time_budget_last_notice_step" in updated_state:
+            updates["time_budget_last_notice_step"] = updated_state.get("time_budget_last_notice_step")
+        if budget_message is not None:
+            updates["messages"] = [budget_message]
+        return updates
+
+
 class TracerPreCompletionVerificationMiddleware(AgentMiddleware[TracerState, Any, Any]):
     """Force one verification turn before allowing deep-agent completion."""
 
@@ -280,6 +298,7 @@ def build_deep_agent_tracer(
             TracerStateSchemaMiddleware(),
             TracerLocalContextMiddleware(sandbox_service=sandbox_service),
             TracerSandboxScopeMiddleware(),
+            TracerTimeBudgetMiddleware(),
             TracerReasoningBudgetMiddleware(reasoning_config=reasoning_config),
             TracerPreCompletionVerificationMiddleware(),
         ],
