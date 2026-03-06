@@ -405,3 +405,39 @@
 
 ### Notes
 - Section 10 completed by removing the legacy custom LangGraph StateGraph path. The tracer now has a single implementation path through deep-agent (`build_deep_agent_tracer`).
+
+## Section 11: Update agent tests to deep-agent only
+
+**Single goal:** All agent tests target build_deep_agent_tracer and deep-agent middleware; remove or migrate tests that only exercise build_tracer_graph.
+
+**Details:**
+- Migrate or remove tests from test_langgraph_agent.py that assert legacy graph behavior; add or extend tests in test_deep_agent_tracer.py for equivalent coverage (routing, tools, middleware, synthesis, state).
+- Test suite must not depend on build_tracer_graph; all tracer behavior validated through build_deep_agent_tracer.
+- Preserve coverage for system prompt, tools, local context, sandbox scope, pre-completion, time budget, loop detection, parallel analysis, harness synthesis.
+
+### Completed work
+- Verified legacy test file `src/backend/tests/agents/test_langgraph_agent.py` is already removed and no migration gaps remain.
+- Confirmed `src/backend/tests/agents/test_deep_agent_tracer.py` covers deep-agent routing/tools/middleware/state/synthesis behaviors.
+- Confirmed `src/backend/tests/agents/test_tracer_middleware.py` is deep-agent compatible and contains no legacy graph coupling.
+- Verified there are no remaining `build_tracer_graph` references anywhere under backend tests.
+
+### Validation commands and outcomes
+- `docker compose exec backend uv run pytest tests/agents/test_deep_agent_tracer.py tests/agents/test_tracer_middleware.py`
+  - Outcome: success (`24 passed in 3.74s`).
+- `rg -n "build_tracer_graph" src/backend/tests`
+  - Outcome: success (no matches).
+
+### Container restart/rebuild logs
+- Pre-task full clean restart (fresh builds/logs):
+  - `docker compose down -v --rmi all`
+  - `docker compose build`
+  - `docker compose up -d`
+- Running state check:
+  - `docker compose ps` -> `db`, `backend`, `frontend`, `chrome` all `Up` (`db` healthy).
+- Logs reviewed:
+  - `docker compose logs --tail=120 backend` -> Alembic migration ran; Uvicorn startup complete.
+  - `docker compose logs --tail=120 frontend` -> Vite dev server ready.
+  - `docker compose logs --tail=120 db` -> PostgreSQL ready to accept connections.
+
+### Notes
+- Section 11 required no new code changes because legacy agent tests had already been migrated/removed in prior sections; this iteration verified and documented deep-agent-only test coverage.

@@ -3,7 +3,7 @@
 Tasks are in **recommended implementation order** (1…n). Each section = **one context window**.  
 Refactor existing implementation into a **deep-agent library in LangGraph**. Sections are atomic (one deliverable each).
 
-**Current section to work on:** Section 11.
+**Current section to work on:** Section 12.
 
 ---
 
@@ -308,8 +308,9 @@ Refactor existing implementation into a **deep-agent library in LangGraph**. Sec
 
 **How to test:** Run pytest for agents and middleware; all tests pass; no references to build_tracer_graph in tests.
 
-**Test results:** (Add when section is complete.)
-- Command and outcome.
+**Test results:**
+- `docker compose exec backend uv run pytest tests/agents/test_deep_agent_tracer.py tests/agents/test_tracer_middleware.py` -> passed (`24 passed in 3.74s`).
+- `rg -n "build_tracer_graph" src/backend/tests` -> no matches.
 
 ---
 
