@@ -1,5 +1,5 @@
 import { FormEvent, useMemo, useState } from "react";
-import { TracerRunResponse, runTracer } from "./utils/api";
+import { HarnessChange, ImprovementMetrics, TracerRunResponse, runTracer } from "./utils/api";
 import "./styles.css";
 
 type RunState = "idle" | "running" | "completed" | "failed";
@@ -35,6 +35,156 @@ function splitTraceIds(raw: string): string[] {
     .split(",")
     .map((value) => value.trim())
     .filter((value) => value.length > 0);
+}
+
+function formatMillisAsSeconds(durationMs: number): string {
+  return `${(durationMs / 1000).toFixed(2)}s`;
+}
+
+function formatOptionalNumber(value?: number | null): string {
+  return value === null || value === undefined ? "n/a" : String(value);
+}
+
+function renderHarnessChangeDetails(change: HarnessChange) {
+  if (change.category === "prompt" && change.prompt_edit) {
+    return (
+      <dl className="change-details">
+        <dt>Target</dt>
+        <dd>{change.prompt_edit.target}</dd>
+        <dt>Action</dt>
+        <dd>{change.prompt_edit.action}</dd>
+        <dt>Instruction</dt>
+        <dd>{change.prompt_edit.instruction}</dd>
+        <dt>Rationale</dt>
+        <dd>{change.prompt_edit.rationale}</dd>
+        {change.prompt_edit.expected_outcome ? (
+          <>
+            <dt>Expected Outcome</dt>
+            <dd>{change.prompt_edit.expected_outcome}</dd>
+          </>
+        ) : null}
+      </dl>
+    );
+  }
+
+  if (change.category === "tool" && change.tool_change) {
+    return (
+      <dl className="change-details">
+        <dt>Tool</dt>
+        <dd>{change.tool_change.tool_name}</dd>
+        <dt>Action</dt>
+        <dd>{change.tool_change.action}</dd>
+        <dt>Summary</dt>
+        <dd>{change.tool_change.change_summary}</dd>
+        <dt>Rationale</dt>
+        <dd>{change.tool_change.rationale}</dd>
+        <dt>Interface</dt>
+        <dd>
+          <pre>{JSON.stringify(change.tool_change.interface, null, 2)}</pre>
+        </dd>
+        {change.tool_change.safety_notes ? (
+          <>
+            <dt>Safety Notes</dt>
+            <dd>{change.tool_change.safety_notes}</dd>
+          </>
+        ) : null}
+      </dl>
+    );
+  }
+
+  if (change.category === "config" && change.config_change) {
+    return (
+      <dl className="change-details">
+        <dt>Key</dt>
+        <dd>{change.config_change.key}</dd>
+        <dt>Action</dt>
+        <dd>{change.config_change.action}</dd>
+        <dt>Scope</dt>
+        <dd>{change.config_change.scope}</dd>
+        <dt>Value</dt>
+        <dd>{JSON.stringify(change.config_change.value)}</dd>
+        <dt>Rationale</dt>
+        <dd>{change.config_change.rationale}</dd>
+      </dl>
+    );
+  }
+
+  return <p className="hint">No category payload was included for this change.</p>;
+}
+
+function renderMetrics(metrics: ImprovementMetrics) {
+  return (
+    <div className="metrics">
+      <h3>Improvement Metrics</h3>
+      <p className={`status ${metrics.improved ? "status-completed" : "status-idle"}`}>
+        {metrics.improved ? "Improved" : "Not Improved"}
+      </p>
+
+      <div className="metrics-grid">
+        <article className="metrics-card">
+          <h4>Baseline</h4>
+          <dl>
+            <dt>Exit Code</dt>
+            <dd>{metrics.baseline.exit_code}</dd>
+            <dt>Success</dt>
+            <dd>{String(metrics.baseline.success)}</dd>
+            <dt>Duration</dt>
+            <dd>{formatMillisAsSeconds(metrics.baseline.duration_ms)}</dd>
+            <dt>Passed</dt>
+            <dd>{formatOptionalNumber(metrics.baseline.tests_passed)}</dd>
+            <dt>Failed</dt>
+            <dd>{formatOptionalNumber(metrics.baseline.tests_failed)}</dd>
+            <dt>Skipped</dt>
+            <dd>{formatOptionalNumber(metrics.baseline.tests_skipped)}</dd>
+            <dt>Command</dt>
+            <dd>{metrics.baseline.command.join(" ")}</dd>
+          </dl>
+        </article>
+
+        <article className="metrics-card">
+          <h4>Post Change</h4>
+          <dl>
+            <dt>Exit Code</dt>
+            <dd>{metrics.post_change.exit_code}</dd>
+            <dt>Success</dt>
+            <dd>{String(metrics.post_change.success)}</dd>
+            <dt>Duration</dt>
+            <dd>{formatMillisAsSeconds(metrics.post_change.duration_ms)}</dd>
+            <dt>Passed</dt>
+            <dd>{formatOptionalNumber(metrics.post_change.tests_passed)}</dd>
+            <dt>Failed</dt>
+            <dd>{formatOptionalNumber(metrics.post_change.tests_failed)}</dd>
+            <dt>Skipped</dt>
+            <dd>{formatOptionalNumber(metrics.post_change.tests_skipped)}</dd>
+            <dt>Command</dt>
+            <dd>{metrics.post_change.command.join(" ")}</dd>
+          </dl>
+        </article>
+
+        <article className="metrics-card">
+          <h4>Delta</h4>
+          <dl>
+            <dt>Exit Code Delta</dt>
+            <dd>{metrics.delta.exit_code_delta}</dd>
+            <dt>Success Delta</dt>
+            <dd>{metrics.delta.success_delta}</dd>
+            <dt>Passed Delta</dt>
+            <dd>{formatOptionalNumber(metrics.delta.tests_passed_delta)}</dd>
+            <dt>Failed Delta</dt>
+            <dd>{formatOptionalNumber(metrics.delta.tests_failed_delta)}</dd>
+            <dt>Skipped Delta</dt>
+            <dd>{formatOptionalNumber(metrics.delta.tests_skipped_delta)}</dd>
+            <dt>Score Before</dt>
+            <dd>{formatOptionalNumber(metrics.delta.score_before)}</dd>
+            <dt>Score After</dt>
+            <dd>{formatOptionalNumber(metrics.delta.score_after)}</dd>
+            <dt>Score Delta</dt>
+            <dd>{formatOptionalNumber(metrics.delta.score_delta)}</dd>
+          </dl>
+        </article>
+      </div>
+    </div>
+  );
 }
 
 export default function App() {
@@ -83,6 +233,7 @@ export default function App() {
       console.info("Tracer run completed", {
         runId: runResult.run_id,
         harnessChangeCount: runResult.harness_change_set.harness_changes.length,
+        metricsAvailable: runResult.improvement_metrics !== null && runResult.improvement_metrics !== undefined,
       });
       setResult(runResult);
       setRunState("completed");
@@ -265,7 +416,27 @@ export default function App() {
               <dt>Harness Changes</dt>
               <dd>{result.harness_change_set.harness_changes.length}</dd>
             </dl>
-            <p>{result.harness_change_set.summary}</p>
+            <p>{result.harness_change_set.summary ?? "No summary returned."}</p>
+
+            <h3>Harness Changes</h3>
+            {result.harness_change_set.harness_changes.length === 0 ? (
+              <p className="hint">No harness changes were returned by this run.</p>
+            ) : (
+              <ul className="change-list">
+                {result.harness_change_set.harness_changes.map((change) => (
+                  <li key={change.change_id} className="change-item">
+                    <h4>{change.title}</h4>
+                    <p className="change-meta">
+                      {change.change_id} | {change.category} | {change.priority} | confidence{" "}
+                      {change.confidence.toFixed(2)}
+                    </p>
+                    {renderHarnessChangeDetails(change)}
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            {result.improvement_metrics ? renderMetrics(result.improvement_metrics) : null}
           </div>
         ) : null}
       </section>

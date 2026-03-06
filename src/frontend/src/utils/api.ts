@@ -14,35 +14,81 @@ export type TracerRunRequest = {
 };
 
 export type HarnessChange = {
+  change_id: string;
   title: string;
-  summary: string;
-  file_path?: string | null;
-  patch?: string | null;
-  rationale?: string | null;
+  category: "prompt" | "tool" | "config";
+  priority: "low" | "medium" | "high" | "critical";
+  confidence: number;
+  prompt_edit?: {
+    target: "system_prompt" | "planner_prompt" | "verification_prompt" | "other";
+    action: "append" | "replace" | "remove" | "clarify";
+    instruction: string;
+    rationale: string;
+    expected_outcome?: string | null;
+  } | null;
+  tool_change?: {
+    tool_name: string;
+    action: "add" | "update" | "remove";
+    change_summary: string;
+    rationale: string;
+    interface: Record<string, unknown>;
+    safety_notes?: string | null;
+  } | null;
+  config_change?: {
+    key: string;
+    action: "set" | "increase" | "decrease" | "remove";
+    value?: unknown;
+    scope: "tracer" | "sandbox" | "runtime" | "model" | "other";
+    rationale: string;
+  } | null;
 };
 
 export type HarnessChangeSet = {
-  run_id: string;
+  run_id?: string | null;
   trace_ids: string[];
-  summary: string;
+  summary?: string | null;
   harness_changes: HarnessChange[];
+  created_at: string;
 };
 
 export type ImprovementMetrics = {
-  baseline_exit_code: number;
-  candidate_exit_code: number;
-  baseline_duration_seconds: number;
-  candidate_duration_seconds: number;
-  command: string[];
-  command_cwd: string | null;
-  tests_passed_before: boolean;
-  tests_passed_after: boolean;
-  pass_delta: number;
-  duration_delta_seconds: number;
-  baseline_stdout_tail: string[];
-  baseline_stderr_tail: string[];
-  candidate_stdout_tail: string[];
-  candidate_stderr_tail: string[];
+  baseline: {
+    command: string[];
+    cwd?: string | null;
+    timeout_seconds: number;
+    exit_code: number;
+    success: boolean;
+    duration_ms: number;
+    tests_passed?: number | null;
+    tests_failed?: number | null;
+    tests_skipped?: number | null;
+    stdout_excerpt: string;
+    stderr_excerpt: string;
+  };
+  post_change: {
+    command: string[];
+    cwd?: string | null;
+    timeout_seconds: number;
+    exit_code: number;
+    success: boolean;
+    duration_ms: number;
+    tests_passed?: number | null;
+    tests_failed?: number | null;
+    tests_skipped?: number | null;
+    stdout_excerpt: string;
+    stderr_excerpt: string;
+  };
+  delta: {
+    exit_code_delta: number;
+    success_delta: number;
+    tests_passed_delta?: number | null;
+    tests_failed_delta?: number | null;
+    tests_skipped_delta?: number | null;
+    score_before?: number | null;
+    score_after?: number | null;
+    score_delta?: number | null;
+  };
+  improved: boolean;
 };
 
 export type TracerRunResponse = {

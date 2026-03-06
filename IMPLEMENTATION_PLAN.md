@@ -2,7 +2,7 @@
 
 Tasks are in **recommended implementation order** (1…n). Each section = **one context window**. Complete one section at a time. Sections 22–23 add UI to run the tracer and view results.
 
-**Current section to work on:** Section 23.
+**Current section to work on:** Section 24.
 
 ---
 
@@ -611,9 +611,38 @@ The following sections implement a **tracing deep-agent** that consumes traces f
 
 **How to test:** Unit test: given two mock run outputs (pass/fail counts), assert delta. Integration: run tracer, apply one change, run tests twice, assert metrics structure.
 
-**Test results:** (Add when section is complete.)
+**Test results:** `docker compose exec frontend npm run test -- --run && docker compose exec frontend npm run typecheck && docker compose exec frontend npm run build` → pass (2026-03-06).
 
 ---
+
+## Section 24: UI – Result persistence and retrieval by run ID
+
+**Depends on:** Section 23 (results UI), Section 21 (run endpoint).
+
+**Single goal:** Allow loading a previously completed tracer run result by run ID without re-running analysis.
+
+**Deep-agent capability:** Human-in-the-loop / visibility continuity — operators can revisit prior tracer outputs for review.
+
+**Details:**
+- Add a backend endpoint to fetch the latest stored tracer result for a run ID.
+- Add frontend UI control to load prior run results and render through the same read-only result components.
+- Keep run execution and run result retrieval as separate actions.
+
+**Tech stack and dependencies**
+- FastAPI router update + frontend API/client wiring.
+
+**Files and purpose**
+
+| File | Purpose |
+|------|--------|
+| src/backend/routers/tracer.py | Add GET endpoint for completed tracer run result retrieval. |
+| src/backend/schemas/tracer_api.py | Add response model for retrieval endpoint if needed. |
+| src/frontend/src/utils/api.ts | Add GET client helper. |
+| src/frontend/src/App.tsx | Add "Load Existing Run" UI path. |
+
+**How to test:** Frontend test with mocked GET response + backend integration test for GET endpoint.
+
+**Test results:** (Add when section is complete.)
 
 ## Section 21: API endpoint – trigger tracer run
 

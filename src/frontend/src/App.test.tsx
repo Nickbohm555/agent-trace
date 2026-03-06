@@ -25,7 +25,62 @@ describe("App tracer run UI", () => {
           run_id: "run-123",
           trace_ids: ["trace-1", "trace-2"],
           summary: "Synthesized one harness change.",
-          harness_changes: [],
+          created_at: "2026-03-06T00:00:00Z",
+          harness_changes: [
+            {
+              change_id: "chg-1",
+              title: "Clarify verification prompt",
+              category: "prompt",
+              priority: "high",
+              confidence: 0.84,
+              prompt_edit: {
+                target: "verification_prompt",
+                action: "append",
+                instruction: "Always run smoke tests before returning done.",
+                rationale: "Missed regressions were observed in failing traces.",
+                expected_outcome: "Fewer false positive completions.",
+              },
+            },
+          ],
+        },
+        improvement_metrics: {
+          baseline: {
+            command: ["uv", "run", "pytest", "tests/api", "-m", "smoke"],
+            cwd: null,
+            timeout_seconds: 900,
+            exit_code: 1,
+            success: false,
+            duration_ms: 15000,
+            tests_passed: 18,
+            tests_failed: 2,
+            tests_skipped: 0,
+            stdout_excerpt: "2 failed, 18 passed",
+            stderr_excerpt: "",
+          },
+          post_change: {
+            command: ["uv", "run", "pytest", "tests/api", "-m", "smoke"],
+            cwd: null,
+            timeout_seconds: 900,
+            exit_code: 0,
+            success: true,
+            duration_ms: 14200,
+            tests_passed: 20,
+            tests_failed: 0,
+            tests_skipped: 0,
+            stdout_excerpt: "20 passed",
+            stderr_excerpt: "",
+          },
+          delta: {
+            exit_code_delta: -1,
+            success_delta: 1,
+            tests_passed_delta: 2,
+            tests_failed_delta: -2,
+            tests_skipped_delta: 0,
+            score_before: 18,
+            score_after: 20,
+            score_delta: 2,
+          },
+          improved: true,
         },
       }),
     });
@@ -50,6 +105,9 @@ describe("App tracer run UI", () => {
     expect(requestBody.trace_ids).toEqual(["trace-1", "trace-2"]);
     expect(await screen.findByText("Completed")).toBeTruthy();
     expect(screen.getByText("Synthesized one harness change.")).toBeTruthy();
+    expect(screen.getByText("Clarify verification prompt")).toBeTruthy();
+    expect(screen.getByText("Improvement Metrics")).toBeTruthy();
+    expect(screen.getByText("Improved")).toBeTruthy();
   });
 
   it("renders backend error message when run fails", async () => {

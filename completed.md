@@ -990,3 +990,43 @@
 **Operational note:**
 - Changed container: `frontend` (and runtime restart of all services for fresh logs).
 - Performed full app restart (`docker compose restart`) and reviewed logs for `backend`, `frontend`, and `db`.
+
+## Section 23: UI – Harness change results and metrics
+
+**Depends on:** Sections 17 (harness change schema), 21 (API and run flow), optionally 20 (metrics).
+
+**Single goal:** Display the tracer output: suggested harness changes and (if available) before/after improvement metrics.
+
+**Deep-agent capability:** Human-in-the-loop / visibility — display harness change list and optional before/after metrics for review and approval.
+
+**Details implemented:**
+- Updated frontend tracer response typing in `src/frontend/src/utils/api.ts` to match backend schemas for `HarnessChangeSet` and nested `ImprovementMetrics` (`baseline`, `post_change`, `delta`, `improved`).
+- Expanded `src/frontend/src/App.tsx` result rendering to include:
+  - Readable list of harness changes with category-specific detail blocks for prompt/tool/config suggestions.
+  - Optional before/after metrics panel with baseline vs post-change metrics and delta values.
+  - Additional run-completion logging (`metricsAvailable`) for visibility.
+- Added styles in `src/frontend/src/styles.css` for harness change cards, detail tables, and metrics grid/cards while preserving existing form/status UI behavior.
+- Extended `src/frontend/src/App.test.tsx` to assert Section 23 output rendering with mock harness changes + mock improvement metrics.
+
+**Test results (2026-03-06):**
+- `docker compose exec frontend npm run test -- --run` → 2 passed.
+- `docker compose exec frontend npm run typecheck` → pass.
+- `docker compose exec frontend npm run build` → pass.
+
+**Useful logs (2026-03-06):**
+- Frontend tests:
+  - `Tracer run completed { runId: 'run-123', harnessChangeCount: 1, metricsAvailable: true }`
+  - `✓ src/App.test.tsx (2 tests)`
+- Frontend container:
+  - `VITE v7.3.1 ready in 318 ms`
+  - `Local: http://localhost:5173/`
+- Backend container:
+  - `INFO: Application startup complete.`
+- DB container:
+  - `LOG: database system is ready to accept connections`
+- Chrome DevTools endpoint:
+  - `curl http://127.0.0.1:9223/json/list` returned active target JSON with `webSocketDebuggerUrl`.
+
+**Operational note:**
+- Changed container: `frontend`.
+- Restarted with `docker compose restart frontend` and verified `docker compose ps` plus backend/frontend/db logs.
