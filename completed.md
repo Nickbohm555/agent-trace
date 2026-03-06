@@ -1202,3 +1202,63 @@
 
 ### Notes
 - Section E7 complete.
+
+## Section E8: E2E (mocked) — Submit with trace_ids only, success response
+
+**Single goal:** With fetch mocked for 200, submit form with only Trace IDs (comma-separated) filled; assert request body includes trace_ids array and UI shows Completed with result.
+
+**Details:**
+- Mock fetch for success response (same shape as E7).
+- Fill "Trace IDs (comma-separated)" with e.g. "trace-a, trace-b"; leave Run ID empty. Submit.
+- Assert fetch body has trace_ids: ["trace-a", "trace-b"] and no run_id (or run_id undefined). Assert "Completed" and result section visible. Ensures trace_ids-only path works.
+
+**Tech stack and dependencies**
+- Vitest, @testing-library/react. No new packages.
+
+**Files and purpose**
+
+| File | Purpose |
+|------|--------|
+| src/frontend/src/App.test.tsx | Added E8 test: trace_ids-only submit, request shape and success UI assertions. |
+
+### Completed work
+- Searched frontend app and API code for reuse before edits:
+  - `src/frontend/src/App.test.tsx`
+  - `src/frontend/src/App.tsx`
+  - `src/frontend/src/utils/api.ts`
+- Added test `submits trace_ids only payload and renders completed result` in `src/frontend/src/App.test.tsx`.
+- Mocked a successful tracer response with trace-driven payload and one harness change.
+- Filled only `Trace IDs (comma-separated)` and submitted.
+- Asserted POST body includes `trace_ids: ["trace-a", "trace-b"]` and `run_id` is undefined.
+- Asserted completion UI renders with `Completed`, summary text, and harness change title.
+
+### Validation commands and outcomes
+- Pre-task fresh rebuild/restart:
+  - `docker compose down -v --rmi all && docker compose build && docker compose up -d`
+  - Outcome: success; fresh images, containers, volumes, and startup.
+- Required frontend tests:
+  - `docker compose exec frontend npm run test`
+  - Outcome: success (`1 passed file`, `4 passed tests`).
+- Post-change container refresh:
+  - `docker compose restart frontend`
+  - Outcome: success; frontend restarted and returned to running state.
+- Runtime state check:
+  - `docker compose ps`
+  - Outcome: `db`, `backend`, `frontend`, and `chrome` all `Up` (`db` healthy).
+
+### Useful logs captured
+- Frontend test logs:
+  - `Submitting tracer run request { runId: undefined, traceIdCount: 2, targetRepoUrl: 'default' }`
+  - `Tracer run completed { runId: 'generated-run-from-traces', harnessChangeCount: 1, metricsAvailable: false }`
+  - `✓ src/App.test.tsx (4 tests)`
+  - `Test Files  1 passed (1)`
+  - `Tests  4 passed (4)`
+- `docker compose logs --no-color --tail=120 backend`
+  - Alembic migration ran; Uvicorn startup complete; app startup complete.
+- `docker compose logs --no-color --tail=120 frontend`
+  - Vite dev server restarted cleanly and ready on port 5173.
+- `docker compose logs --no-color --tail=120 db`
+  - PostgreSQL initialized and ready to accept connections.
+
+### Notes
+- Section E8 complete.
