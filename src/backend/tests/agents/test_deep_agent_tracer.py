@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import get_origin, get_type_hints
 
 import pytest
 from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
@@ -8,6 +9,7 @@ from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
 from agents import deep_agent_tracer
 from agents.deep_agent_tracer import build_deep_agent_tracer
+from agents.tracer_state import TracerState
 from schemas.sandbox import SandboxCreateRequest
 from services.sandbox_service import SandboxService
 
@@ -56,27 +58,53 @@ def test_build_deep_agent_tracer_propagates_tracer_state_fields(
 
     initial_state = {
         "messages": [HumanMessage(content="Analyze this trace with extended state.")],
+        "current_trace_summary": "trace-summary",
         "run_id": "run-state-1",
         "sandbox_path": "/tmp/sandbox-state-1",
         "local_context": "Sandbox local context: mocked.",
+        "reasoning_phase": "verification",
+        "reasoning_level": "high",
+        "reasoning_phase_levels": {"implementation": "medium"},
         "pre_completion_verified": False,
+        "run_started_at_epoch_seconds": 123.0,
+        "max_runtime_seconds": 120,
+        "max_steps": 8,
+        "time_budget_notice_interval_steps": 2,
         "agent_step_count": 1,
         "time_budget_last_notice_step": 0,
+        "edit_file_counts": {"src/main.py": 3},
+        "loop_detection_threshold": 10,
         "loop_detection_nudged_files": ["src/main.py"],
         "parallel_error_findings": [{"trace_id": "trace-1", "summary": "failing test"}],
+        "parallel_error_count": 1,
+        "parallel_analysis_completed": True,
+        "harness_changes": [],
         "harness_change_set": {"run_id": "run-state-1", "harness_changes": []},
     }
 
     result = graph.invoke(initial_state)
 
+    assert result["current_trace_summary"] == "trace-summary"
     assert result["run_id"] == "run-state-1"
     assert result["sandbox_path"] == "/tmp/sandbox-state-1"
     assert result["local_context"] == "Sandbox local context: mocked."
+    assert result["reasoning_phase"] == "verification"
+    assert result["reasoning_level"] == "high"
+    assert result["reasoning_phase_levels"] == {"implementation": "medium"}
     assert result["pre_completion_verified"] is False
+    assert result["run_started_at_epoch_seconds"] == 123.0
+    assert result["max_runtime_seconds"] == 120
+    assert result["max_steps"] == 8
+    assert result["time_budget_notice_interval_steps"] == 2
     assert result["agent_step_count"] == 1
     assert result["time_budget_last_notice_step"] == 0
+    assert result["edit_file_counts"] == {"src/main.py": 3}
+    assert result["loop_detection_threshold"] == 10
     assert result["loop_detection_nudged_files"] == ["src/main.py"]
     assert result["parallel_error_findings"] == [{"trace_id": "trace-1", "summary": "failing test"}]
+    assert result["parallel_error_count"] == 1
+    assert result["parallel_analysis_completed"] is True
+    assert result["harness_changes"] == []
     assert result["harness_change_set"] == {"run_id": "run-state-1", "harness_changes": []}
 
 
@@ -96,6 +124,13 @@ def test_build_deep_agent_tracer_uses_tracer_system_prompt(monkeypatch: pytest.M
     assert "Build phase" in str(captured["system_prompt"])
     assert "Verify phase" in str(captured["system_prompt"])
     assert "Fix phase" in str(captured["system_prompt"])
+    schema_middleware = captured["middleware"][0]
+    assert schema_middleware.state_schema is TracerState
+
+
+def test_tracer_state_messages_is_plain_list_contract() -> None:
+    messages_hint = get_type_hints(TracerState)["messages"]
+    assert get_origin(messages_hint) is list
 
 
 def test_build_deep_agent_tracer_registers_tracer_tools(monkeypatch: pytest.MonkeyPatch) -> None:

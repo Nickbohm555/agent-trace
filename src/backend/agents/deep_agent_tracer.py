@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, get_type_hints
 
 from deepagents import create_deep_agent
 from langchain.agents.middleware import AgentMiddleware
@@ -21,6 +21,7 @@ from tools.trace_tools import build_read_trace_tool
 
 logger = logging.getLogger(__name__)
 _SANDBOX_TOOL_NAMES = {"list_directory", "read_file", "edit_file", "run_command"}
+_TRACER_STATE_FIELDS = sorted(get_type_hints(TracerState).keys())
 
 
 class TracerStateSchemaMiddleware(AgentMiddleware[TracerState, Any, Any]):
@@ -168,6 +169,8 @@ def build_deep_agent_tracer(
         extra={
             "custom_model_provided": model is not None,
             "state_schema": "TracerState",
+            "state_field_count": len(_TRACER_STATE_FIELDS),
+            "state_fields": _TRACER_STATE_FIELDS,
             "tool_count": len(resolved_tools),
         },
     )
