@@ -501,3 +501,46 @@
 
 ### Notes
 - No backend response schema changes were required; this section preserved contract parity while improving frontend handling of existing FastAPI validation error format.
+
+## Section 1: Single error-analysis agent (invokable)
+
+**Single goal:** Implement one invokable error-analysis agent that takes a single `TraceErrorTask` and returns one or more `ErrorAnalysisFinding`s, so it can later be run in parallel per task.
+
+### Completed work
+- Added a LangGraph-based invokable single-task error-analysis agent in `src/backend/agents/error_analysis_agent.py`.
+- Added explicit single-task agent contract APIs:
+  - `build_error_analysis_agent(...)`
+  - `run_error_analysis_agent_async(task, ...) -> list[ErrorAnalysisFinding]`
+  - `run_error_analysis_agent(task, ...) -> list[ErrorAnalysisFinding]`
+- Kept existing functionality intact:
+  - `collect_error_tasks(...)`
+  - `_default_error_analyzer(...)`
+  - parallel analyzers (`analyze_errors_in_parallel*`).
+- Added visibility logs for single-task invokable agent execution (`Completed invokable error-analysis agent task`, `Ran invokable error-analysis agent`).
+- Added unit coverage in `src/backend/tests/agents/test_error_analysis_agent.py` for one-task invokable agent return contract.
+
+### Validation commands and outcomes
+- Required section test:
+  - `docker compose exec backend uv run pytest tests/agents/test_error_analysis_agent.py`
+  - Outcome: success (`3 passed in 0.31s`).
+- Backend readiness:
+  - `curl -I -s http://localhost:8001/docs | head -n 1`
+  - Outcome: success (`HTTP/1.1 200 OK`).
+
+### Container restart/rebuild logs
+- Pre-task full clean restart (fresh builds/logs):
+  - `docker compose down -v --rmi all`
+  - `docker compose build`
+  - `docker compose up -d`
+- Post-change refresh (changed container scope: backend-only code):
+  - `docker compose restart backend`
+- Running state check:
+  - `docker compose ps` -> `db`, `backend`, `frontend`, `chrome` all `Up` (`db` healthy).
+- Logs reviewed:
+  - `docker compose logs --tail=120 backend` -> uvicorn startup complete; reload observed after `agents/error_analysis_agent.py` and test updates; server healthy.
+  - `docker compose logs --tail=80 frontend` -> Vite dev server ready.
+  - `docker compose logs --tail=80 db` -> PostgreSQL ready to accept connections.
+  - `docker compose logs --tail=80 chrome` -> browserless started on port 3000.
+
+### Notes
+- Section 1 is complete and leaves orchestration/parallel invocation integration for Section 2.

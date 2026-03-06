@@ -2,8 +2,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import asdict, dataclass
+from typing import Any
+
+from langgraph.graph import END, START, StateGraph
+from typing_extensions import TypedDict
 
 from schemas.trace import StoredTrace
 
@@ -38,6 +42,19 @@ class ErrorAnalysisFinding:
 
 
 AnalyzerFn = Callable[[TraceErrorTask], ErrorAnalysisFinding | Awaitable[ErrorAnalysisFinding]]
+ErrorAnalysisAgentAnalyzerFn = Callable[
+    [TraceErrorTask],
+    (
+        ErrorAnalysisFinding
+        | Sequence[ErrorAnalysisFinding]
+        | Awaitable[ErrorAnalysisFinding | Sequence[ErrorAnalysisFinding]]
+    ),
+]
+
+
+class ErrorAnalysisAgentState(TypedDict, total=False):
+    task: TraceErrorTask
+    findings: list[ErrorAnalysisFinding]
 
 
 def collect_error_tasks(traces: list[StoredTrace]) -> list[TraceErrorTask]:
@@ -109,6 +126,73 @@ def _default_error_analyzer(task: TraceErrorTask) -> ErrorAnalysisFinding:
         error_message=task.message,
         error_type=task.error_type,
     )
+
+
+def _default_error_analysis_agent_analyzer(task: TraceErrorTask) -> list[ErrorAnalysisFinding]:
+    return [_default_error_analyzer(task)]
+
+
+def _normalize_agent_findings(
+    findings: ErrorAnalysisFinding | Sequence[ErrorAnalysisFinding],
+) -> list[ErrorAnalysisFinding]:
+    if isinstance(findings, ErrorAnalysisFinding):
+        return [findings]
+    return list(findings)
+
+
+def build_error_analysis_agent(*, analyzer: ErrorAnalysisAgentAnalyzerFn | None = None) -> Any:
+    selected_analyzer = analyzer or _default_error_analysis_agent_analyzer
+
+    async def _analyze_task(state: ErrorAnalysisAgentState) -> ErrorAnalysisAgentState:
+        task = state["task"]
+        result = selected_analyzer(task)
+        if asyncio.iscoroutine(result):
+            result = await result
+        findings = _normalize_agent_findings(result)
+        logger.info(
+            "Completed invokable error-analysis agent task",
+            extra={
+                "trace_id": task.trace_id,
+                "scope": task.scope,
+                "span_id": task.span_id,
+                "finding_count": len(findings),
+            },
+        )
+        return {"findings": findings}
+
+    graph = StateGraph(ErrorAnalysisAgentState)
+    graph.add_node("analyze_task", _analyze_task)
+    graph.add_edge(START, "analyze_task")
+    graph.add_edge("analyze_task", END)
+    return graph.compile()
+
+
+async def run_error_analysis_agent_async(
+    task: TraceErrorTask,
+    *,
+    analyzer: ErrorAnalysisAgentAnalyzerFn | None = None,
+) -> list[ErrorAnalysisFinding]:
+    graph = build_error_analysis_agent(analyzer=analyzer)
+    result = await graph.ainvoke({"task": task})
+    findings = result.get("findings", []) if isinstance(result, dict) else []
+    logger.info(
+        "Ran invokable error-analysis agent",
+        extra={
+            "trace_id": task.trace_id,
+            "scope": task.scope,
+            "span_id": task.span_id,
+            "finding_count": len(findings),
+        },
+    )
+    return findings
+
+
+def run_error_analysis_agent(
+    task: TraceErrorTask,
+    *,
+    analyzer: ErrorAnalysisAgentAnalyzerFn | None = None,
+) -> list[ErrorAnalysisFinding]:
+    return asyncio.run(run_error_analysis_agent_async(task, analyzer=analyzer))
 
 
 async def _run_single_analysis(

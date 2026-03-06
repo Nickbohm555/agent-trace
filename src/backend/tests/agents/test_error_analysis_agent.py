@@ -8,6 +8,7 @@ from agents.error_analysis_agent import (
     TraceErrorTask,
     analyze_errors_in_parallel,
     collect_error_tasks,
+    run_error_analysis_agent,
 )
 from schemas.trace import NormalizedTraceSpan, StoredTrace
 
@@ -79,4 +80,22 @@ def test_analyze_errors_in_parallel_runs_multiple_workers_concurrently() -> None
 
     assert len(findings) == 6
     assert max_active_workers > 1
+    assert findings[0].suggested_fix_category == "timeout_or_retry_policy"
+
+
+def test_run_error_analysis_agent_returns_findings_for_single_task() -> None:
+    task = TraceErrorTask(
+        trace_id="trace-1",
+        scope="trace",
+        span_id=None,
+        message="timeout while waiting for completion",
+        error_type="TimeoutError",
+    )
+
+    findings = run_error_analysis_agent(task)
+
+    assert isinstance(findings, list)
+    assert len(findings) == 1
+    assert isinstance(findings[0], ErrorAnalysisFinding)
+    assert findings[0].trace_id == "trace-1"
     assert findings[0].suggested_fix_category == "timeout_or_retry_policy"
