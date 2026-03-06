@@ -468,3 +468,51 @@
 - Changed container: `backend`.
 - Full clean restart was completed before implementation (`docker compose down -v --rmi all && docker compose build && docker compose up -d`).
 - Post-change restart performed for `backend` and logs were reviewed for `backend`, `frontend`, and `db`.
+
+## Section 13: Pre-completion verification middleware
+
+**Depends on:** Section 4 (graph to attach middleware).
+
+**Single goal:** Before the tracer can “finish”, run a verification pass (e.g. remind agent to run tests and compare to spec) so the agent does not exit after “code looks ok” without testing.
+
+**Deep-agent capability:** Middleware — pre-completion verification (PreCompletionChecklistMiddleware / Ralph Wiggum–style loop).
+
+**Details implemented:**
+- Added `src/backend/agents/tracer_middleware.py` with:
+  - `should_inject_pre_completion_checklist(...)` to detect first end-attempt without prior verification.
+  - `build_pre_completion_checklist_message(...)` to inject a concrete verification checklist (tests + spec comparison).
+  - `pre_completion_check_node(...)` to append the checklist and mark state as verified.
+- Extended `src/backend/agents/tracer_state.py` with `pre_completion_verified` flag.
+- Updated `src/backend/agents/langgraph_agent.py` conditional routing:
+  - `continue` when tool calls are present.
+  - `verify` route before `END` when no tool calls and verification has not yet occurred.
+  - Added `pre_completion_check` node and edge back to `agent`, forcing one extra verification turn before completion.
+- Updated existing graph tests in `src/backend/tests/agents/test_langgraph_agent.py` for new route behavior and added a dedicated route assertion for `verify`.
+- Added `src/backend/tests/agents/test_tracer_middleware.py` to validate middleware helpers and the forced one-more-turn verification loop.
+- Added logging for route selection and checklist injection for runtime visibility.
+
+**Test results:**
+- `docker compose exec backend uv run pytest tests/agents/test_langgraph_agent.py tests/agents/test_tracer_middleware.py`
+- Result: `13 passed in 1.71s` on 2026-03-06.
+
+**Useful logs (2026-03-06):**
+- Container health after backend restart (`docker compose ps`):
+  - `backend` up on `0.0.0.0:8001->8000/tcp`
+  - `frontend` up on `0.0.0.0:5174->5173/tcp`
+  - `db` healthy on `0.0.0.0:5433->5432/tcp`
+- Backend logs (`docker compose logs --tail=120 backend`):
+  - `INFO: Uvicorn running on http://0.0.0.0:8000`
+  - `INFO: Application startup complete.`
+  - `WARNING: WatchFiles detected changes ... Reloading...` (expected during iteration)
+- Frontend logs (`docker compose logs --tail=80 frontend`):
+  - `VITE v7.3.1 ready`
+  - `Local: http://localhost:5173/`
+- DB logs (`docker compose logs --tail=80 db`):
+  - `database system is ready to accept connections`
+- Backend readiness:
+  - Initial post-restart probe returned `000` during startup.
+  - Recheck succeeded: `curl http://localhost:8001/docs` returned `HTTP/1.1 200 OK`.
+
+**Operational note:**
+- Changed container: `backend` only (Python code/tests).
+- Restarted backend with `docker compose restart backend` and verified backend/frontend/db logs plus readiness endpoint.

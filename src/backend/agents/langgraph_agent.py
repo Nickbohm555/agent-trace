@@ -17,6 +17,10 @@ from agents.tracer_config import (
     resolve_reasoning_phase,
 )
 from agents.tracer_context import build_local_context_message, contains_local_context_message
+from agents.tracer_middleware import (
+    pre_completion_check_node,
+    should_inject_pre_completion_checklist,
+)
 from agents.tracer_prompts import build_tracer_system_prompt
 from agents.tracer_state import TracerState
 from services.sandbox_service import SandboxService
@@ -30,8 +34,8 @@ logger = logging.getLogger(__name__)
 ModelInvoke = Callable[[TracerState, ReasoningPhase, ReasoningLevel], AIMessage]
 
 
-def should_continue(state: TracerState) -> Literal["continue", "end"]:
-    """Route back to the agent loop only when the last AI message has tool calls."""
+def should_continue(state: TracerState) -> Literal["continue", "verify", "end"]:
+    """Route to tools, verification middleware, or end based on latest model output."""
     messages: list[AnyMessage] = state.get("messages", [])
     if not messages:
         logger.info("Tracer graph ending because no messages are present")
@@ -39,7 +43,12 @@ def should_continue(state: TracerState) -> Literal["continue", "end"]:
 
     last_message = messages[-1]
     has_tool_calls = bool(getattr(last_message, "tool_calls", None))
-    route = "continue" if has_tool_calls else "end"
+    if has_tool_calls:
+        route = "continue"
+    elif should_inject_pre_completion_checklist(state):
+        route = "verify"
+    else:
+        route = "end"
     logger.info("Tracer graph conditional route selected", extra={"route": route})
     return route
 
@@ -147,6 +156,7 @@ def build_tracer_graph(
 
     graph = StateGraph(TracerState)
     graph.add_node("agent", resolved_agent_node)
+    graph.add_node("pre_completion_check", pre_completion_check_node)
     if resolved_tools:
         graph.add_node("tools", ToolNode(resolved_tools))
 
@@ -157,6 +167,7 @@ def build_tracer_graph(
             should_continue,
             {
                 "continue": "tools",
+                "verify": "pre_completion_check",
                 "end": END,
             },
         )
@@ -167,7 +178,9 @@ def build_tracer_graph(
             should_continue,
             {
                 "continue": "agent",
+                "verify": "pre_completion_check",
                 "end": END,
             },
         )
+    graph.add_edge("pre_completion_check", "agent")
     return graph.compile()

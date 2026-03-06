@@ -27,10 +27,23 @@ def test_should_continue_routes_continue_when_tool_calls_present() -> None:
     assert route == "continue"
 
 
+def test_should_continue_routes_verify_before_end_when_not_yet_verified() -> None:
+    route = should_continue({"messages": [AIMessage(content="All done")]})
+
+    assert route == "verify"
+
+
 def test_build_tracer_graph_default_agent_runs_single_step_and_ends() -> None:
     graph = build_tracer_graph()
 
-    result = graph.invoke({"messages": [], "run_id": "run-123", "current_trace_summary": None})
+    result = graph.invoke(
+        {
+            "messages": [],
+            "run_id": "run-123",
+            "current_trace_summary": None,
+            "pre_completion_verified": True,
+        }
+    )
 
     assert "messages" in result
     assert len(result["messages"]) == 1
@@ -62,6 +75,7 @@ def test_build_tracer_graph_passes_phase_budget_to_model_adapter() -> None:
             "run_id": "run-456",
             "current_trace_summary": None,
             "reasoning_phase": "implementation",
+            "pre_completion_verified": True,
         }
     )
 
@@ -85,6 +99,7 @@ def test_build_tracer_graph_state_level_override_wins_over_phase_defaults() -> N
             "current_trace_summary": None,
             "reasoning_phase": "planning",
             "reasoning_level": "medium",
+            "pre_completion_verified": True,
         }
     )
 
@@ -102,7 +117,14 @@ def test_build_tracer_graph_injects_tracer_system_prompt_for_model_adapter() -> 
         return AIMessage(content="System prompt acknowledged")
 
     graph = build_tracer_graph(model_invoke=model_invoke)
-    result = graph.invoke({"messages": [], "run_id": "run-prompt", "current_trace_summary": None})
+    result = graph.invoke(
+        {
+            "messages": [],
+            "run_id": "run-prompt",
+            "current_trace_summary": None,
+            "pre_completion_verified": True,
+        }
+    )
 
     assert captured_first_message is not None
     assert "Planning & Discovery phase" in captured_first_message.content
@@ -140,7 +162,14 @@ def test_build_tracer_graph_executes_tool_node_when_tool_calls_present() -> None
         return AIMessage(content="Trace analyzed")
 
     graph = build_tracer_graph(model_invoke=model_invoke, tools=[tool])
-    result = graph.invoke({"messages": [], "run_id": "run-with-error", "current_trace_summary": None})
+    result = graph.invoke(
+        {
+            "messages": [],
+            "run_id": "run-with-error",
+            "current_trace_summary": None,
+            "pre_completion_verified": True,
+        }
+    )
 
     assert call_count == 2
     assert len(result["messages"]) == 3
@@ -218,7 +247,14 @@ def test_build_tracer_graph_executes_codebase_tools_with_sandbox(
         return AIMessage(content="Codebase inspected")
 
     graph = build_tracer_graph(model_invoke=model_invoke, sandbox_service=sandbox_service)
-    result = graph.invoke({"messages": [], "run_id": "run-codebase", "current_trace_summary": None})
+    result = graph.invoke(
+        {
+            "messages": [],
+            "run_id": "run-codebase",
+            "current_trace_summary": None,
+            "pre_completion_verified": True,
+        }
+    )
 
     assert call_count == 4
     assert len(result["messages"]) == 7
@@ -265,7 +301,14 @@ def test_build_tracer_graph_executes_run_command_tool_with_sandbox(
         return AIMessage(content="Command verified")
 
     graph = build_tracer_graph(model_invoke=model_invoke, sandbox_service=sandbox_service)
-    result = graph.invoke({"messages": [], "run_id": "run-command", "current_trace_summary": None})
+    result = graph.invoke(
+        {
+            "messages": [],
+            "run_id": "run-command",
+            "current_trace_summary": None,
+            "pre_completion_verified": True,
+        }
+    )
 
     assert call_count == 2
     assert len(result["messages"]) == 3
@@ -298,6 +341,7 @@ def test_build_tracer_graph_injects_local_context_on_first_turn(
             "run_id": "run-local-context",
             "current_trace_summary": None,
             "sandbox_path": session.sandbox_path,
+            "pre_completion_verified": True,
         }
     )
 

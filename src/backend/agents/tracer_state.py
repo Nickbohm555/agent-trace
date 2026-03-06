@@ -20,3 +20,4 @@ class TracerState(TypedDict, total=False):
     reasoning_phase: ReasoningPhase
     reasoning_level: ReasoningLevel
     reasoning_phase_levels: dict[ReasoningPhase, ReasoningLevel]
+    pre_completion_verified: bool
