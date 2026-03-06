@@ -324,3 +324,65 @@ def test_build_deep_agent_tracer_blocks_sandbox_tool_without_state_sandbox_path(
         graph.invoke({"messages": [HumanMessage(content="Inspect files")]})
 
     sandbox_service.teardown_sandbox(session)
+
+
+def test_build_deep_agent_tracer_applies_reasoning_budget_from_phase_defaults(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bound_kwargs: list[dict[str, object]] = []
+
+    def capture_bind_tools(self, *_args, **kwargs):
+        bound_kwargs.append(dict(kwargs))
+        return self
+
+    monkeypatch.setattr(FakeMessagesListChatModel, "bind_tools", capture_bind_tools)
+
+    graph = build_deep_agent_tracer(
+        model=FakeMessagesListChatModel(
+            responses=[AIMessage(content="Reasoning budget captured.")],
+        )
+    )
+
+    result = graph.invoke(
+        {
+            "messages": [HumanMessage(content="Analyze with verification effort")],
+            "reasoning_phase": "verification",
+        }
+    )
+
+    assert bound_kwargs
+    assert bound_kwargs[-1]["reasoning"] == {"effort": "xhigh"}
+    assert result["reasoning_phase"] == "verification"
+    assert result["reasoning_level"] == "xhigh"
+
+
+def test_build_deep_agent_tracer_reasoning_level_override_wins(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bound_kwargs: list[dict[str, object]] = []
+
+    def capture_bind_tools(self, *_args, **kwargs):
+        bound_kwargs.append(dict(kwargs))
+        return self
+
+    monkeypatch.setattr(FakeMessagesListChatModel, "bind_tools", capture_bind_tools)
+
+    graph = build_deep_agent_tracer(
+        model=FakeMessagesListChatModel(
+            responses=[AIMessage(content="Reasoning override captured.")],
+        )
+    )
+
+    result = graph.invoke(
+        {
+            "messages": [HumanMessage(content="Analyze with explicit level")],
+            "reasoning_phase": "planning",
+            "reasoning_level": "medium",
+            "reasoning_phase_levels": {"planning": "high"},
+        }
+    )
+
+    assert bound_kwargs
+    assert bound_kwargs[-1]["reasoning"] == {"effort": "medium"}
+    assert result["reasoning_phase"] == "planning"
+    assert result["reasoning_level"] == "medium"

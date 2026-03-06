@@ -61,3 +61,33 @@
 
 ### Notes
 - Section 2 completed with state-schema alignment focused on deep-agent state contract while preserving existing tracer keys for upcoming middleware migrations.
+
+## Section 3: Migrate reasoning budget to deep-agent
+
+**Single goal:** Make reasoning compute (phase and level) configurable in the deep-agent path so planning/verification can use higher budget and implementation lower (reasoning sandwich).
+
+### Completed work
+- Added `TracerReasoningBudgetMiddleware` to `src/backend/agents/deep_agent_tracer.py`.
+- The middleware now resolves effective reasoning phase and level per model turn using existing `tracer_config` utilities (`resolve_reasoning_phase`, `resolve_reasoning_level`, and default `TracerReasoningConfig` phase sandwich values).
+- Added support for `reasoning_phase_levels` overrides from tracer state while preserving explicit `reasoning_level` as the highest-precedence override for the active turn.
+- Wired middleware into `build_deep_agent_tracer(...)` so deep-agent model calls now receive reasoning settings through request model settings (`reasoning: {"effort": <level>}`).
+- Added visibility logging for each deep-agent model call reasoning budget application (run_id, phase, level).
+- Extended deep-agent tracer tests to assert reasoning budget propagation into model binding kwargs and resolved state values.
+
+### Validation commands and outcomes
+- `docker compose exec backend uv run pytest tests/agents/test_deep_agent_tracer.py`
+  - Outcome: success (`11 passed in 2.14s`).
+
+### Container restart/rebuild logs
+- Code-change refresh:
+  - `docker compose restart backend`
+- Runtime state check:
+  - `docker compose ps` -> `db`, `backend`, `frontend`, and `chrome` all `Up` (db healthy).
+- Post-change logs checked:
+  - `docker compose logs --no-color --tail=120 backend frontend db`
+  - Backend showed Uvicorn startup/reload cycles and application startup complete.
+  - Frontend showed Vite dev server ready.
+  - DB showed PostgreSQL ready to accept connections.
+
+### Notes
+- This section keeps deep-agent architecture intact and moves reasoning budget application directly into deep-agent model invocation path via middleware.

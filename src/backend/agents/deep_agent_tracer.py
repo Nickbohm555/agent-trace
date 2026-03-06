@@ -1,15 +1,23 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, get_type_hints
+from typing import Any, Mapping, get_type_hints
 
 from deepagents import create_deep_agent
 from langchain.agents.middleware import AgentMiddleware
+from langchain.agents.middleware.types import ModelRequest
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import SystemMessage, ToolMessage
 from langchain_core.tools import BaseTool
 from langgraph.prebuilt.tool_node import ToolCallRequest
 
+from agents.tracer_config import (
+    ReasoningLevel,
+    ReasoningPhase,
+    TracerReasoningConfig,
+    resolve_reasoning_level,
+    resolve_reasoning_phase,
+)
 from agents.tracer_context import build_local_context_message, contains_local_context_message
 from agents.tracer_prompts import build_tracer_system_prompt
 from agents.tracer_state import TracerState
@@ -123,6 +131,70 @@ class TracerLocalContextMiddleware(AgentMiddleware[TracerState, Any, Any]):
         }
 
 
+class TracerReasoningBudgetMiddleware(AgentMiddleware[TracerState, Any, Any]):
+    """Resolve tracer reasoning phase/level and bind model reasoning effort per call."""
+
+    def __init__(self, *, reasoning_config: TracerReasoningConfig | None = None) -> None:
+        self._reasoning_config = reasoning_config or TracerReasoningConfig()
+
+    def before_model(self, state: TracerState, runtime: Any) -> dict[str, Any] | None:
+        del runtime
+        phase, level = self._resolve_reasoning_budget(state)
+        return {
+            "reasoning_phase": phase,
+            "reasoning_level": level,
+        }
+
+    def wrap_model_call(self, request: ModelRequest[Any], handler: Any) -> Any:
+        state = request.state if isinstance(request.state, dict) else {}
+        phase, level = self._resolve_reasoning_budget(state)
+        reasoning_settings = {"effort": level}
+        existing_model_settings = request.model_settings if isinstance(request.model_settings, dict) else {}
+
+        logger.info(
+            "Applying tracer reasoning budget to deep-agent model call",
+            extra={
+                "run_id": state.get("run_id"),
+                "reasoning_phase": phase,
+                "reasoning_level": level,
+            },
+        )
+        return handler(
+            request.override(
+                model_settings={
+                    **existing_model_settings,
+                    "reasoning": reasoning_settings,
+                }
+            )
+        )
+
+    def _resolve_reasoning_budget(self, state: Mapping[str, Any]) -> tuple[ReasoningPhase, ReasoningLevel]:
+        phase = resolve_reasoning_phase(state.get("reasoning_phase"))
+        phase_levels = self._resolve_phase_levels_with_overrides(state)
+        fallback_level = phase_levels.get(phase, self._reasoning_config.default_level)
+        level = resolve_reasoning_level(state.get("reasoning_level"), fallback=fallback_level)
+        return phase, level
+
+    def _resolve_phase_levels_with_overrides(
+        self,
+        state: Mapping[str, Any],
+    ) -> dict[ReasoningPhase, ReasoningLevel]:
+        resolved_levels = dict(self._reasoning_config.phase_levels)
+        raw_phase_levels = state.get("reasoning_phase_levels")
+        if not isinstance(raw_phase_levels, Mapping):
+            return resolved_levels
+
+        for phase in ("planning", "implementation", "verification"):
+            raw_level = raw_phase_levels.get(phase)
+            if raw_level is None:
+                continue
+            resolved_levels[phase] = resolve_reasoning_level(
+                raw_level,
+                fallback=self._reasoning_config.default_level,
+            )
+        return resolved_levels
+
+
 def _build_tracer_tools(
     *,
     trace_storage_service: TraceStorageService | None,
@@ -155,6 +227,7 @@ def build_deep_agent_tracer(
     *,
     model: str | BaseChatModel | None = None,
     system_prompt: str | None = None,
+    reasoning_config: TracerReasoningConfig | None = None,
     trace_storage_service: TraceStorageService | None = None,
     sandbox_service: SandboxService | None = None,
 ) -> Any:
@@ -182,5 +255,6 @@ def build_deep_agent_tracer(
             TracerStateSchemaMiddleware(),
             TracerLocalContextMiddleware(sandbox_service=sandbox_service),
             TracerSandboxScopeMiddleware(),
+            TracerReasoningBudgetMiddleware(reasoning_config=reasoning_config),
         ],
     )
