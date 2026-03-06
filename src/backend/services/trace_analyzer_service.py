@@ -37,6 +37,8 @@ class TraceAnalyzerRequest:
     evaluation_command: list[str] | None = None
     evaluation_cwd: str | None = None
     evaluation_timeout_seconds: int = 900
+    max_runtime_seconds: int | None = None
+    max_steps: int | None = None
 
 
 @dataclass(frozen=True)
@@ -115,6 +117,8 @@ class TraceAnalyzerService:
                     graph_result_holder["value"] = self._invoke_tracer_graph(
                         run_id=request.run_id,
                         sandbox_session=sandbox_session,
+                        max_runtime_seconds=request.max_runtime_seconds,
+                        max_steps=request.max_steps,
                     )
 
                 improvement_metrics = metrics_service.measure_improvement(
@@ -133,6 +137,8 @@ class TraceAnalyzerService:
                 graph_result = self._invoke_tracer_graph(
                     run_id=request.run_id,
                     sandbox_session=sandbox_session,
+                    max_runtime_seconds=request.max_runtime_seconds,
+                    max_steps=request.max_steps,
                 )
             harness_change_set = self._build_change_set_from_graph_result(
                 graph_result=graph_result,
@@ -171,18 +177,25 @@ class TraceAnalyzerService:
         *,
         run_id: str,
         sandbox_session: SandboxSession,
+        max_runtime_seconds: int | None = None,
+        max_steps: int | None = None,
     ) -> dict[str, Any]:
         tracer_graph = self.graph_builder(
             trace_storage_service=self.trace_storage_service,
             sandbox_service=self.sandbox_service,
         )
+        graph_state: dict[str, Any] = {
+            "messages": [],
+            "run_id": run_id,
+            "sandbox_path": sandbox_session.sandbox_path,
+            "pre_completion_verified": True,
+        }
+        if max_runtime_seconds is not None:
+            graph_state["max_runtime_seconds"] = max_runtime_seconds
+        if max_steps is not None:
+            graph_state["max_steps"] = max_steps
         return tracer_graph.invoke(
-            {
-                "messages": [],
-                "run_id": run_id,
-                "sandbox_path": sandbox_session.sandbox_path,
-                "pre_completion_verified": True,
-            }
+            graph_state
         )
 
     @staticmethod

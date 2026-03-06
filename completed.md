@@ -868,3 +868,68 @@
 **Operational note:**
 - Changed container: `backend`.
 - Restarted backend with `docker compose restart backend` and reviewed backend/frontend/db logs.
+
+## Section 21: API endpoint – trigger tracer run
+
+**Depends on:** Section 19 (orchestration service), Section 3 (default target repo from config).
+
+**Single goal:** Expose a FastAPI endpoint to trigger the tracer on a given Langfuse run (or trace set) and target repo path.
+
+**Deep-agent capability:** Orchestration entry — API to trigger full tracer flow (fetch → sandbox → tracer → harness suggestions); default target repo from config when URL omitted.
+
+**Details:**
+- **Deep-agent approach:** API is the single entry point to run the **full deep-agent tracer**: call trace analyzer service (Section 19), return harness change output. If using `create_deep_agent`, this endpoint invokes that graph with tracer tools and middleware; same contract either way.
+- Input: run_id (or trace_ids), target_repo_url or path (optional), optional time/step budget.
+- **Configure tracer to target repo:** If `target_repo_url` is omitted, use configured default from env `TRACER_DEFAULT_TARGET_REPO_URL` (Section 3; default `https://github.com/Nickbohm555/agent-search`).
+- Flow: call trace_analyzer_service (fetch traces, create sandbox, invoke LangGraph tracer, return harness change suggestions); optionally include improvement metrics (Section 20). Return harness change suggestions (Section 17–18) and optionally final state.
+- Endpoint is async; long runs may need background task or job ID (document choice).
+
+**Details implemented:**
+- Added `src/backend/schemas/tracer_api.py` with strict request/response models for tracer run execution.
+- Added request validation requiring at least one of `run_id` or `trace_ids`; support for optional `max_runtime_seconds` and `max_steps` was included.
+- Added `src/backend/routers/tracer.py` implementing `POST /api/tracer/run`:
+  - Resolves effective run id (`run_id` or first trace id fallback).
+  - Calls `TraceAnalyzerService` through dependency injection.
+  - Uses `run_in_threadpool` to keep endpoint async while orchestrator remains sync.
+  - Maps user/runtime errors to `400` and unexpected failures to `500`.
+  - Added route-level structured logging for request + completion visibility.
+- Updated `src/backend/main.py` to include tracer router.
+- Extended `src/backend/services/trace_analyzer_service.py` to pass optional `max_runtime_seconds` and `max_steps` into tracer graph state.
+- Added integration tests in `src/backend/tests/api/test_tracer_run.py` covering:
+  - Successful tracer run request/response shape.
+  - Trace-id-only request fallback to derived `run_id`.
+  - Validation failure when both `run_id` and `trace_ids` are missing.
+- Fixed runtime blocker discovered during live smoke test:
+  - Backend container did not include `git`, causing sandbox clone failure.
+  - Updated `src/backend/Dockerfile` to install `git`.
+  - Rebuilt and restarted stack.
+
+**Test results:**
+- `docker compose exec backend uv run pytest tests/api/test_tracer_run.py tests/services/test_trace_analyzer_service.py`
+- Result: `5 passed in 1.23s` (2026-03-06).
+
+**Live runtime verification (2026-03-06):**
+- Command:
+  - `curl -sS -X POST http://localhost:8001/api/tracer/run -H 'Content-Type: application/json' -d '{"run_id":"smoke-run-21","trace_ids":["trace-smoke-1"],"limit":5,"max_steps":3}'`
+- Result (HTTP 200 JSON):
+  - `run_id: smoke-run-21`
+  - `target_repo_url: https://github.com/Nickbohm555/agent-search`
+  - `harness_change_set.summary: No harness changes were synthesized by the tracer graph.`
+
+**Useful logs:**
+- Build/restart:
+  - `docker compose build && docker compose up -d`
+  - backend recreated and started healthy; `db` healthy; `frontend` running.
+- Backend:
+  - `INFO: Uvicorn running on http://0.0.0.0:8000`
+  - `INFO: Application startup complete.`
+  - `POST /api/tracer/run HTTP/1.1" 200 OK`
+- Frontend:
+  - `VITE v7.3.1 ready`
+- DB:
+  - `database system is ready to accept connections`
+
+**Operational note:**
+- Changed container: `backend` (code + Dockerfile).
+- Since Dockerfile changed, performed full `docker compose build` and `docker compose up -d` instead of only restarting backend.
+- Verified container state with `docker compose ps` and inspected `backend`, `frontend`, and `db` logs.
