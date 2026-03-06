@@ -1024,3 +1024,67 @@
 ### Notes
 - One intermediate command used an incorrect in-container test path (`src/backend/tests/...`) and was corrected immediately to `tests/...`; final required test run passed.
 - Containers were fully rebooted for this section; no subsequent code changes required additional rebuilds.
+
+## Section E5: E2E — Chrome DevTools debug endpoint reachable
+
+**Single goal:** Verify the Chrome DevTools workflow from AGENTS.md: after stopping Docker Chrome (if any) and launching local Chrome via `launch-devtools.sh`, the debug endpoint returns targets.
+
+**Details:**
+- Per AGENTS.md: `docker compose stop chrome` if chrome service exists; then `./launch-devtools.sh http://localhost:5174` to start a local Chrome with DevTools.
+- Assert: `curl http://127.0.0.1:9223/json/list` returns JSON with at least one target and `webSocketDebuggerUrl` (agent-trace uses port 9223).
+- If port 9223 is already in use and returns targets, reuse that session (document in test results).
+- This section validates the E2E browser-testing setup only; no UI assertions.
+
+**Tech stack and dependencies**
+- Local Chrome, launch-devtools.sh, curl. No new packages in repo.
+
+**Files and purpose**
+
+| File | Purpose |
+|------|--------|
+| (none) | Verification only. |
+
+**How to test:** From project root: `docker compose stop chrome` (if present); `./launch-devtools.sh http://localhost:5174`; `curl -s http://127.0.0.1:9223/json/list`; assert valid JSON with targets and webSocketDebuggerUrl.
+
+**Test results:** (Add when section is complete.)
+- Command and outcome.
+
+### Completed work
+- Reused the existing E2E Chrome DevTools workflow and validated it end-to-end against the configured port `9223`.
+- Per iteration requirement, performed a full fresh restart before work:
+  - `docker compose down -v --rmi all`
+  - `docker compose build`
+  - `docker compose up -d`
+- Encountered a startup race where `launch-devtools.sh` queried `/json/list` too early and printed a transient connection-refused error.
+- Fixed the script by adding endpoint wait/retry logic in `launch-devtools.sh` so the documented command reports targets reliably.
+
+### Codebase reuse/search notes (pre-change)
+- `rg -n "launch-devtools|chromeDev|9223|json/list|remote-debugging-port" -S .`
+- Confirmed all Chrome debug workflow references already point to `launch-devtools.sh` and endpoint `http://127.0.0.1:9223/json/list`.
+
+### Validation commands and outcomes
+- Fresh app restart/build:
+  - `docker compose down -v --rmi all && docker compose build && docker compose up -d`
+  - Outcome: success; rebuilt and started fresh services.
+- Required E5 workflow check:
+  - `docker compose stop chrome && ./launch-devtools.sh http://localhost:5174 && curl -s http://127.0.0.1:9223/json/list`
+  - Outcome: endpoint returned JSON targets including `webSocketDebuggerUrl`.
+- One-command workflow check:
+  - `./chromeDev http://localhost:5174 && curl -s http://127.0.0.1:9223/json/list`
+  - Outcome: endpoint returned page + service_worker targets with `webSocketDebuggerUrl`.
+- Post-fix deterministic rerun from clean debug-port state:
+  - `(lsof -ti tcp:9223 | xargs -r kill) || true; docker compose stop chrome; ./launch-devtools.sh http://localhost:5174; curl -s http://127.0.0.1:9223/json/list`
+  - Outcome: script printed targets directly (no transient error) and follow-up curl returned matching JSON.
+
+### Useful logs captured
+- `docker compose ps`
+  - `backend`, `frontend`, `db` all `Up` (`db` healthy); `chrome` intentionally stopped for local Chrome debugging.
+- `docker compose logs --tail=120 backend`
+  - Alembic upgrade and Uvicorn startup complete; readiness request to `/docs` returned `200 OK`.
+- `docker compose logs --tail=120 frontend`
+  - Vite dev server ready and serving on container port `5173` (host `5174`).
+- `docker compose logs --tail=120 db`
+  - PostgreSQL initialized and ready to accept connections.
+
+### Notes
+- Section E5 is complete. The launch script now waits for the DevTools endpoint so AGENTS.md workflow commands are stable.

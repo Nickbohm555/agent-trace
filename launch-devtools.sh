@@ -65,12 +65,27 @@ case "$TARGET" in
     ;;
 esac
 
-sleep 1
+wait_for_endpoint() {
+  local attempts="${1:-10}"
+  local delay="${2:-1}"
+  local i
+  for i in $(seq 1 "${attempts}"); do
+    if curl -fsS "$ENDPOINT" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep "${delay}"
+  done
+  return 1
+}
+
+wait_for_endpoint 10 1 || true
 
 echo "App URL: ${APP_URL}"
 echo "DevTools endpoint: ${ENDPOINT}"
 
 if command -v curl >/dev/null 2>&1; then
   echo "\nCurrent targets:"
-  curl -fsS "$ENDPOINT" || true
+  if ! curl -fsS "$ENDPOINT"; then
+    echo "Unable to reach DevTools endpoint yet: ${ENDPOINT}"
+  fi
 fi
