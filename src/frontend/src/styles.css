@@ -1,1 +1,159 @@
-/* UI intentionally empty while scaffold is being set up. */
+:root {
+  font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+  color: #0f1b2a;
+  background: radial-gradient(circle at top left, #dff2ff, #f6fbff 45%, #f3f5f8 100%);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+.app-shell {
+  display: grid;
+  gap: 1.25rem;
+  grid-template-columns: 2fr 1fr;
+  padding: 1.25rem;
+}
+
+.panel {
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid #d8e2eb;
+  border-radius: 12px;
+  box-shadow: 0 10px 30px rgba(15, 27, 42, 0.08);
+  padding: 1rem 1.1rem;
+}
+
+.panel h1,
+.panel h2,
+.panel h3 {
+  margin: 0 0 0.5rem;
+}
+
+.panel p {
+  margin: 0 0 0.8rem;
+}
+
+.tracer-form {
+  display: grid;
+  gap: 0.9rem;
+}
+
+label {
+  display: grid;
+  font-size: 0.9rem;
+  font-weight: 600;
+  gap: 0.35rem;
+}
+
+input {
+  border: 1px solid #b8c5d1;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  padding: 0.55rem 0.6rem;
+}
+
+.row {
+  display: grid;
+  gap: 0.8rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.actions {
+  display: flex;
+  gap: 0.7rem;
+}
+
+button {
+  background: #0f5ea8;
+  border: 1px solid #0f5ea8;
+  border-radius: 8px;
+  color: #fff;
+  cursor: pointer;
+  font-weight: 600;
+  padding: 0.55rem 0.9rem;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+button.secondary {
+  background: #f0f4f8;
+  border-color: #c8d5e2;
+  color: #0f1b2a;
+}
+
+.hint {
+  color: #41546b;
+  font-size: 0.85rem;
+}
+
+.status {
+  border-radius: 999px;
+  display: inline-block;
+  font-size: 0.85rem;
+  font-weight: 700;
+  margin-bottom: 0.7rem;
+  padding: 0.25rem 0.65rem;
+}
+
+.status-idle {
+  background: #edf2f7;
+  color: #334155;
+}
+
+.status-running {
+  background: #fff7db;
+  color: #8a5800;
+}
+
+.status-completed {
+  background: #e7f6ec;
+  color: #166534;
+}
+
+.status-failed {
+  background: #fdecec;
+  color: #991b1b;
+}
+
+.error {
+  color: #991b1b;
+  font-weight: 600;
+}
+
+.result dl {
+  display: grid;
+  gap: 0.3rem 0.8rem;
+  grid-template-columns: auto 1fr;
+  margin: 0 0 0.8rem;
+}
+
+.result dt {
+  color: #3f4f62;
+  font-weight: 700;
+}
+
+.result dd {
+  margin: 0;
+}
+
+@media (max-width: 960px) {
+  .app-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .row {
+    grid-template-columns: 1fr;
+  }
+}

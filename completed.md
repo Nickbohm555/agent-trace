@@ -933,3 +933,60 @@
 - Changed container: `backend` (code + Dockerfile).
 - Since Dockerfile changed, performed full `docker compose build` and `docker compose up -d` instead of only restarting backend.
 - Verified container state with `docker compose ps` and inspected `backend`, `frontend`, and `db` logs.
+
+## Section 22: UI – Tracer run form and job status
+
+**Depends on:** Section 21 (API).
+
+**Single goal:** Provide a UI to trigger a tracer run and (if the API is async) show job status and completion.
+
+**Deep-agent capability:** Human-in-the-loop / operator interface — trigger run (run_id, repo, budget), submit to API, poll job status and completion.
+
+**Details:**
+- **Deep-agent approach:** Harness [human-in-the-loop](https://docs.langchain.com/oss/python/deepagents/harness#human-in-the-loop) / operator interface: user triggers a tracer run (run_id, repo, budget), submits to API, and polls for job status and completion.
+- Form: run_id (or trace_ids), target_repo_url (or path), optional time/step budget, optional LANGFUSE_* overrides (e.g. project/env).
+- Submit calls POST /api/tracer/run (or equivalent). If the backend uses a job queue or background task, support job_id and poll GET /api/tracer/run/:id or /api/tracer/jobs/:id for status and result.
+- Show clear errors (e.g. invalid run_id, clone failure) and success state (e.g. “Run started” or “Run completed” with link to results).
+
+**Details implemented:**
+- Added typed tracer API client in `src/frontend/src/utils/api.ts` with `runTracer(...)`, request/response schemas aligned to backend, and parsed backend error handling.
+- Implemented tracer run UI in `src/frontend/src/App.tsx`:
+  - Inputs for `run_id`, comma-separated `trace_ids`, `target_repo_url`, `run_name`, `environment`, from/to timestamps, `limit`, `max_runtime_seconds`, and `max_steps`.
+  - Clear lifecycle status display: `Idle`, `Running`, `Completed`, `Failed`.
+  - Success summary panel showing run metadata and harness-change summary.
+  - Error panel rendering backend `detail` messages.
+  - Added frontend visibility logs (`console.info`/`console.error`) for submit/success/failure.
+- Added responsive styling for form + status panels in `src/frontend/src/styles.css`.
+- Added UI tests in `src/frontend/src/App.test.tsx` covering:
+  - request payload shape and completed-state rendering
+  - backend error rendering in failed state
+- Updated frontend tooling:
+  - Added `jsdom` dev dependency in `src/frontend/package.json` + `src/frontend/package-lock.json`.
+  - Configured Vitest in `src/frontend/vite.config.ts` (`jsdom` env; include TS test files).
+  - Updated build script to avoid emitting JS into source tree: `tsc --noEmit && vite build`.
+
+**Test results (2026-03-06):**
+- `docker compose exec frontend npm run test` → `2 passed`.
+- `docker compose exec frontend npm run typecheck` → success.
+- `docker compose exec frontend npm run build` → success.
+
+**Useful logs (2026-03-06):**
+- Frontend test logs:
+  - `Submitting tracer run request { runId: 'run-123', traceIdCount: 2, targetRepoUrl: 'default' }`
+  - `Tracer run completed { runId: 'run-123', harnessChangeCount: 0 }`
+  - `Tracer run failed { error: 'Provide at least one of run_id or trace_ids.' }`
+- Backend container logs:
+  - `INFO:     Uvicorn running on http://0.0.0.0:8000`
+  - `INFO:     Application startup complete.`
+- Frontend container logs:
+  - `VITE v7.3.1 ready`
+  - `Local: http://localhost:5173/`
+- DB container logs:
+  - `database system is ready to accept connections`
+- Health checks:
+  - `backend_docs_status=200` (`http://localhost:8001/docs`)
+  - `frontend_status=200` (`http://localhost:5174`)
+
+**Operational note:**
+- Changed container: `frontend` (and runtime restart of all services for fresh logs).
+- Performed full app restart (`docker compose restart`) and reviewed logs for `backend`, `frontend`, and `db`.
