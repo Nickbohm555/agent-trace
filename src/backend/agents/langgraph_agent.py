@@ -5,7 +5,9 @@ from collections.abc import Callable
 from typing import Any, Literal
 
 from langchain_core.messages import AIMessage, AnyMessage
+from langchain_core.tools import BaseTool
 from langgraph.graph import END, START, StateGraph
+from langgraph.prebuilt import ToolNode
 
 from agents.tracer_config import (
     ReasoningLevel,
@@ -15,6 +17,8 @@ from agents.tracer_config import (
     resolve_reasoning_phase,
 )
 from agents.tracer_state import TracerState
+from services.trace_storage_service import TraceStorageService
+from tools.trace_tools import build_read_trace_tool
 
 logger = logging.getLogger(__name__)
 
@@ -51,8 +55,14 @@ def build_tracer_graph(
     *,
     model_invoke: ModelInvoke | None = None,
     reasoning_config: TracerReasoningConfig | None = None,
+    trace_storage_service: TraceStorageService | None = None,
+    tools: list[BaseTool] | None = None,
 ) -> Any:
     """Build the Section 4 LangGraph skeleton for the tracer deep-agent loop."""
+    resolved_tools = list(tools or [])
+    if trace_storage_service is not None:
+        resolved_tools.append(build_read_trace_tool(trace_storage_service))
+
     if agent_node is None:
         selected_reasoning_config = reasoning_config or TracerReasoningConfig()
         selected_model_invoke = model_invoke or default_model_invoke
@@ -75,13 +85,27 @@ def build_tracer_graph(
 
     graph = StateGraph(TracerState)
     graph.add_node("agent", resolved_agent_node)
+    if resolved_tools:
+        graph.add_node("tools", ToolNode(resolved_tools))
+
     graph.add_edge(START, "agent")
-    graph.add_conditional_edges(
-        "agent",
-        should_continue,
-        {
-            "continue": "agent",
-            "end": END,
-        },
-    )
+    if resolved_tools:
+        graph.add_conditional_edges(
+            "agent",
+            should_continue,
+            {
+                "continue": "tools",
+                "end": END,
+            },
+        )
+        graph.add_edge("tools", "agent")
+    else:
+        graph.add_conditional_edges(
+            "agent",
+            should_continue,
+            {
+                "continue": "agent",
+                "end": END,
+            },
+        )
     return graph.compile()

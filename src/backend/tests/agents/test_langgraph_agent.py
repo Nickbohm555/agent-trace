@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from langchain_core.messages import AIMessage
+from langchain_core.messages import AIMessage, ToolMessage
+from langchain_core.tools import StructuredTool
 
 from agents.langgraph_agent import build_tracer_graph, should_continue
 from agents.tracer_config import TracerReasoningConfig
@@ -83,3 +84,40 @@ def test_build_tracer_graph_state_level_override_wins_over_phase_defaults() -> N
     )
 
     assert captures == [("planning", "medium")]
+
+
+def test_build_tracer_graph_executes_tool_node_when_tool_calls_present() -> None:
+    tool = StructuredTool.from_function(
+        name="read_trace",
+        description="Return a synthetic trace summary for testing.",
+        func=lambda run_id: {"run_id": run_id, "errors": [{"message": "boom"}]},
+    )
+
+    call_count = 0
+
+    def model_invoke(state: dict[str, object], _: str, __: str) -> AIMessage:
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            return AIMessage(
+                content="Need trace details",
+                tool_calls=[
+                    {
+                        "name": "read_trace",
+                        "args": {"run_id": "run-with-error"},
+                        "id": "tc-read-trace",
+                    }
+                ],
+            )
+
+        assert isinstance(state["messages"][-1], ToolMessage)
+        return AIMessage(content="Trace analyzed")
+
+    graph = build_tracer_graph(model_invoke=model_invoke, tools=[tool])
+    result = graph.invoke({"messages": [], "run_id": "run-with-error", "current_trace_summary": None})
+
+    assert call_count == 2
+    assert len(result["messages"]) == 3
+    assert isinstance(result["messages"][1], ToolMessage)
+    assert "boom" in str(result["messages"][1].content)
+    assert result["messages"][2].content == "Trace analyzed"

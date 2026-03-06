@@ -175,3 +175,42 @@
 **Operational note:**
 - Changed container: `backend`.
 - Restarted backend with `docker compose restart backend` and verified logs for `backend`, `frontend`, and `db` plus `docker compose ps` healthy status.
+
+## Section 6: Tracer tool – read trace
+
+**Depends on:** Sections 1, 2 (ingestion and storage), Section 4 (graph to bind tool).
+
+**Single goal:** Add a tool the tracer agent can call to read fetched trace content (errors, spans, inputs/outputs).
+
+**Deep-agent capability:** Tools — trace read (observation/feedback signal for the tracer).
+
+**Details implemented:**
+- Added `src/backend/tools/trace_tools.py` with a `read_trace` structured tool that accepts `run_id` and/or `trace_id`, clamps query `limit`, and returns structured summaries (errors, failed spans, key inputs/outputs, token/cost/latency metadata).
+- Added logging in the tool for invalid input calls and successful read summaries (`run_id`, `trace_id`, requested/effective limit, returned trace count).
+- Updated `src/backend/agents/langgraph_agent.py` to support tool binding via LangGraph `ToolNode` and route `agent -> tools -> agent` when tool calls are present.
+- Bound `read_trace` automatically when `trace_storage_service` is supplied to graph construction, while keeping no-tools behavior unchanged.
+- Updated `src/backend/tools/__init__.py` exports for trace tool discovery.
+- Added unit tests in `src/backend/tests/tools/test_trace_tools.py` for validation errors and structured trace-summary output.
+- Added graph integration coverage in `src/backend/tests/agents/test_langgraph_agent.py` to verify tool call execution and post-tool reasoning loop.
+
+**Test results:**
+- `docker compose exec backend uv run pytest tests/tools/test_trace_tools.py tests/agents/test_langgraph_agent.py`
+- Result: `7 passed in 0.93s` on 2026-03-06.
+
+**Useful logs (2026-03-06):**
+- Backend:
+  - `INFO  [alembic.runtime.migration] Running upgrade  -> 20260306_01, add trace storage tables`
+  - `INFO:     Uvicorn running on http://0.0.0.0:8000`
+  - `WARNING:  WatchFiles detected changes in 'tools/trace_tools.py'. Reloading...`
+  - `INFO:     Application startup complete.`
+- Frontend:
+  - `VITE v7.3.1  ready in 161 ms`
+  - `Local: http://localhost:5173/`
+- DB:
+  - `database system is ready to accept connections`
+- Backend readiness check:
+  - `curl -I http://localhost:8001/docs` returned `HTTP/1.1 200 OK`
+
+**Operational note:**
+- Changed container: `backend`.
+- Restarted backend with `docker compose restart backend` after implementation and verified `docker compose ps` plus logs for `backend`, `frontend`, and `db`.
