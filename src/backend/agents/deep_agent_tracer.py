@@ -196,6 +196,18 @@ class TracerReasoningBudgetMiddleware(AgentMiddleware[TracerState, Any, Any]):
     def wrap_model_call(self, request: ModelRequest[Any], handler: Any) -> Any:
         state = request.state if isinstance(request.state, dict) else {}
         phase, level = self._resolve_reasoning_budget(state)
+        if not self._supports_reasoning_settings(request):
+            logger.info(
+                "Skipping tracer reasoning model settings for unsupported model provider",
+                extra={
+                    "run_id": state.get("run_id"),
+                    "reasoning_phase": phase,
+                    "reasoning_level": level,
+                    "model_type": type(getattr(request, "model", None)).__name__,
+                },
+            )
+            return handler(request)
+
         reasoning_settings = {"effort": level}
         existing_model_settings = request.model_settings if isinstance(request.model_settings, dict) else {}
 
@@ -215,6 +227,19 @@ class TracerReasoningBudgetMiddleware(AgentMiddleware[TracerState, Any, Any]):
                 }
             )
         )
+
+    @staticmethod
+    def _supports_reasoning_settings(request: ModelRequest[Any]) -> bool:
+        model = getattr(request, "model", None)
+        if model is None:
+            return True
+
+        model_module = getattr(type(model), "__module__", "").lower()
+        model_name = getattr(type(model), "__name__", "").lower()
+        if "anthropic" in model_module or "anthropic" in model_name:
+            return False
+
+        return True
 
     def _resolve_reasoning_budget(self, state: Mapping[str, Any]) -> tuple[ReasoningPhase, ReasoningLevel]:
         phase = resolve_reasoning_phase(state.get("reasoning_phase"))

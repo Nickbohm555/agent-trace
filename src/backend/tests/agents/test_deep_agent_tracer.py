@@ -10,7 +10,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from agents import deep_agent_tracer
-from agents.deep_agent_tracer import build_deep_agent_tracer
+from agents.deep_agent_tracer import TracerReasoningBudgetMiddleware, build_deep_agent_tracer
 from models import Base
 from schemas.trace import NormalizedTrace, NormalizedTraceError
 from agents.tracer_state import TracerState
@@ -356,6 +356,34 @@ def test_tracer_state_messages_is_plain_list_contract() -> None:
     messages_hint = get_type_hints(TracerState, include_extras=True)["messages"]
     assert get_origin(messages_hint) is Annotated
     assert get_origin(get_args(messages_hint)[0]) is list
+
+
+def test_reasoning_budget_middleware_skips_reasoning_settings_for_anthropic_models() -> None:
+    middleware = TracerReasoningBudgetMiddleware()
+
+    class ChatAnthropic:
+        pass
+
+    class DummyModelRequest:
+        def __init__(self) -> None:
+            self.model = ChatAnthropic()
+            self.state = {"run_id": "run-anthropic", "reasoning_phase": "planning", "reasoning_level": "high"}
+            self.model_settings = {"temperature": 0}
+
+        def override(self, **kwargs):
+            clone = DummyModelRequest()
+            clone.model = kwargs.get("model", self.model)
+            clone.state = kwargs.get("state", self.state)
+            clone.model_settings = kwargs.get("model_settings", self.model_settings)
+            return clone
+
+    request = DummyModelRequest()
+
+    def handler(inner_request):
+        return inner_request
+
+    forwarded_request = middleware.wrap_model_call(request, handler)
+    assert forwarded_request.model_settings == {"temperature": 0}
 
 
 def test_build_deep_agent_tracer_registers_tracer_tools(monkeypatch: pytest.MonkeyPatch) -> None:

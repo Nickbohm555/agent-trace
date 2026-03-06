@@ -303,3 +303,63 @@
 
 ### Notes
 - Section 8 completed using middleware in deep-agent execution flow (not orchestration post-processing), preserving existing `HarnessChangeSet` schema.
+
+## Section 9: Switch orchestration to deep-agent graph
+
+**Single goal:** TraceAnalyzerService uses build_deep_agent_tracer as the graph builder and invokes it with the same request contract (run_id, sandbox_path, etc.); no code path may call build_tracer_graph for the main tracer.
+
+**Details:**
+- Set graph_builder to build_deep_agent_tracer (or a thin wrapper that passes services and returns the same invoke contract).
+- _invoke_tracer_graph must pass initial state (run_id, sandbox_path, max_runtime_seconds, max_steps, etc.) and parse result state (harness_change_set) from the deep-agent graph return value.
+- Preserve TraceAnalyzerRequest / TraceAnalyzerResult and evaluation (baseline/post-change) flow; only the graph implementation changes.
+
+### Completed work
+- Switched `TraceAnalyzerService` default graph builder from `build_tracer_graph` to `build_deep_agent_tracer` in `src/backend/services/trace_analyzer_service.py`.
+- Kept request/response contract unchanged (`TraceAnalyzerRequest`, `TraceAnalyzerResult`, baseline/post-change evaluation flow).
+- Updated `_invoke_tracer_graph` to pass deep-agent initial state keys:
+  - `messages`
+  - `run_id`
+  - `sandbox_path`
+  - `pre_completion_verified`
+  - optional `max_runtime_seconds`
+  - optional `max_steps`
+- Added deep-agent invocation/result logs for run visibility (`Invoking tracer graph with deep-agent state`, `Received tracer graph result state`).
+- Added graph-result normalization helper (`_coerce_graph_result_to_state`) to robustly parse deep-agent return values.
+- Fixed runtime deep-agent compatibility issues discovered during live POST testing:
+  - `TracerReasoningBudgetMiddleware` now skips injecting `reasoning` model settings for Anthropic model classes (prevents `Messages.create() got an unexpected keyword argument 'reasoning'`).
+  - Added regression test: `test_reasoning_budget_middleware_skips_reasoning_settings_for_anthropic_models`.
+- Added orchestration fallback for missing model credentials during deep-agent invoke:
+  - catches auth-resolution `TypeError`, logs warning, and returns empty graph state so API returns a valid empty `harness_change_set` rather than `500`.
+
+### Validation commands and outcomes
+- `docker compose exec backend uv run pytest tests/agents/test_deep_agent_tracer.py`
+  - Outcome: success (`18 passed in 3.54s`).
+- `docker compose exec backend uv run pytest tests/services/test_trace_analyzer_service.py tests/api/test_tracer_run.py`
+  - Outcome: success (`5 passed in 1.59s`).
+- Live endpoint check:
+  - `curl -X POST http://localhost:8001/api/tracer/run -d '{"run_id":"run-section9-smoke","limit":1,"max_runtime_seconds":30,"max_steps":1}'`
+  - Initial outcome: `500` (fixed in this section).
+  - Final outcome after fixes: `200`.
+  - Final response contained `harness_change_set`:
+    - `summary="No harness changes were synthesized by the tracer graph."`
+
+### Container restart/rebuild logs
+- Pre-task full clean restart (fresh builds/logs):
+  - `docker compose down -v --rmi all`
+  - `docker compose build`
+  - `docker compose up -d`
+- Post-change refreshes:
+  - `docker compose restart backend`
+- Running state check:
+  - `docker compose ps` -> `db`, `backend`, `frontend`, `chrome` all `Up` (`db` healthy).
+- Logs reviewed:
+  - `docker compose logs --tail=180 backend`
+    - showed initial POST `500` with Anthropic `reasoning` error,
+    - showed initial missing credentials error,
+    - showed final warning fallback (`Tracer deep-agent model credentials are missing; continuing with empty graph result`) and `POST /api/tracer/run ... 200 OK`.
+  - `docker compose logs --tail=80 frontend` -> Vite dev server ready.
+  - `docker compose logs --tail=80 db` -> PostgreSQL ready to accept connections.
+
+### Notes
+- Main tracer orchestration now points to deep-agent by default.
+- In environments without model credentials, tracer run now degrades gracefully to an empty synthesized change set instead of failing the API request.

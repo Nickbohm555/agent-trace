@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Callable
 
-from agents.langgraph_agent import build_tracer_graph
+from agents.deep_agent_tracer import build_deep_agent_tracer
 from schemas.harness_changes import HarnessChangeSet
 from schemas.improvement_metrics import ImprovementMetrics
 from schemas.sandbox import SandboxCreateRequest, SandboxSession
@@ -61,7 +61,7 @@ class TraceAnalyzerService:
     trace_storage_service: TraceStorageService
     sandbox_service: SandboxService
     improvement_metrics_service: ImprovementMetricsService | None = None
-    graph_builder: GraphBuilder = build_tracer_graph
+    graph_builder: GraphBuilder = build_deep_agent_tracer
 
     def analyze(self, request: TraceAnalyzerRequest) -> TraceAnalyzerResult:
         logger.info(
@@ -194,9 +194,35 @@ class TraceAnalyzerService:
             graph_state["max_runtime_seconds"] = max_runtime_seconds
         if max_steps is not None:
             graph_state["max_steps"] = max_steps
-        return tracer_graph.invoke(
-            graph_state
+        logger.info(
+            "Invoking tracer graph with deep-agent state",
+            extra={
+                "run_id": run_id,
+                "sandbox_path": sandbox_session.sandbox_path,
+                "has_max_runtime_seconds": max_runtime_seconds is not None,
+                "has_max_steps": max_steps is not None,
+            },
         )
+        try:
+            raw_result = tracer_graph.invoke(graph_state)
+        except TypeError as exc:
+            if self._is_missing_model_credentials_error(exc):
+                logger.warning(
+                    "Tracer deep-agent model credentials are missing; continuing with empty graph result",
+                    extra={"run_id": run_id, "error": str(exc)},
+                )
+                return {}
+            raise
+        coerced_result = self._coerce_graph_result_to_state(raw_result)
+        logger.info(
+            "Received tracer graph result state",
+            extra={
+                "run_id": run_id,
+                "result_key_count": len(coerced_result.keys()),
+                "has_harness_change_set": "harness_change_set" in coerced_result,
+            },
+        )
+        return coerced_result
 
     @staticmethod
     def _coerce_traces_to_run_id(traces: list[NormalizedTrace], *, run_id: str) -> list[NormalizedTrace]:
@@ -224,4 +250,31 @@ class TraceAnalyzerService:
             trace_ids=[trace.trace_id for trace in traces],
             summary="No harness changes were synthesized by the tracer graph.",
             harness_changes=[],
+        )
+
+    @staticmethod
+    def _coerce_graph_result_to_state(raw_result: Any) -> dict[str, Any]:
+        if isinstance(raw_result, dict):
+            return raw_result
+
+        if hasattr(raw_result, "model_dump"):
+            dumped_result = raw_result.model_dump(mode="json")
+            if isinstance(dumped_result, dict):
+                return dumped_result
+
+        if isinstance(getattr(raw_result, "state", None), dict):
+            return dict(raw_result.state)
+
+        logger.warning(
+            "Tracer graph returned non-mapping result; coercing to empty state",
+            extra={"result_type": type(raw_result).__name__},
+        )
+        return {}
+
+    @staticmethod
+    def _is_missing_model_credentials_error(exc: TypeError) -> bool:
+        message = str(exc).lower()
+        return (
+            "could not resolve authentication method" in message
+            or "expected either api_key or auth_token" in message
         )
