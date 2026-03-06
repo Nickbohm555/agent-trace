@@ -11,6 +11,7 @@ from sqlalchemy.orm import sessionmaker
 
 from agents import deep_agent_tracer
 from agents.deep_agent_tracer import TracerReasoningBudgetMiddleware, build_deep_agent_tracer
+from agents.error_analysis_agent import ErrorAnalysisFinding
 from models import Base
 from schemas.trace import NormalizedTrace, NormalizedTraceError
 from agents.tracer_state import TracerState
@@ -271,6 +272,63 @@ def test_build_deep_agent_tracer_injects_parallel_error_findings_from_trace_stor
     assert len(result["parallel_error_findings"]) == 1
     assert result["parallel_error_findings"][0]["trace_id"] == "trace-err-1"
     assert result["parallel_error_findings"][0]["suggested_fix_category"] == "timeout_or_retry_policy"
+
+
+def test_build_deep_agent_tracer_parallel_error_analysis_uses_invokable_agent_runner(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_bind_tools(monkeypatch)
+    engine = create_engine("sqlite+pysqlite:///:memory:", future=True)
+    Base.metadata.create_all(engine)
+    session_factory = sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
+    trace_storage_service = TraceStorageService(session_factory=session_factory)
+    trace_storage_service.save_traces(
+        [
+            NormalizedTrace(
+                trace_id="trace-agent-1",
+                run_id="run-agent-analysis",
+                error=NormalizedTraceError(message="custom error", error_type="CustomError"),
+            )
+        ]
+    )
+
+    captured: dict[str, int] = {"task_count": 0}
+
+    def fake_agent_runner(tasks):
+        captured["task_count"] = len(tasks)
+        return [
+            ErrorAnalysisFinding(
+                trace_id="trace-agent-1",
+                scope="trace",
+                span_id=None,
+                root_cause="agent-detected-root-cause",
+                suggested_fix_category="agent_runner_category",
+                confidence=0.99,
+                error_message="custom error",
+                error_type="CustomError",
+            )
+        ]
+
+    monkeypatch.setattr(deep_agent_tracer, "run_error_analysis_agent_tasks_in_parallel", fake_agent_runner)
+
+    graph = build_deep_agent_tracer(
+        model=FakeMessagesListChatModel(
+            responses=[AIMessage(content="Agent runner findings captured.")],
+        ),
+        trace_storage_service=trace_storage_service,
+    )
+    result = graph.invoke(
+        {
+            "messages": [HumanMessage(content="Analyze run errors via invokable agent")],
+            "run_id": "run-agent-analysis",
+            "pre_completion_verified": True,
+        }
+    )
+
+    assert captured["task_count"] == 1
+    assert result["parallel_analysis_completed"] is True
+    assert result["parallel_error_count"] == 1
+    assert result["parallel_error_findings"][0]["suggested_fix_category"] == "agent_runner_category"
 
 
 def test_build_deep_agent_tracer_synthesizes_harness_change_set_from_findings(

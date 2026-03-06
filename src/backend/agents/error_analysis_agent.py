@@ -50,8 +50,6 @@ ErrorAnalysisAgentAnalyzerFn = Callable[
         | Awaitable[ErrorAnalysisFinding | Sequence[ErrorAnalysisFinding]]
     ),
 ]
-
-
 class ErrorAnalysisAgentState(TypedDict, total=False):
     task: TraceErrorTask
     findings: list[ErrorAnalysisFinding]
@@ -206,6 +204,81 @@ async def _run_single_analysis(
         if asyncio.iscoroutine(result):
             return await result
         return result
+
+
+async def _run_single_agent_analysis(
+    task: TraceErrorTask,
+    *,
+    agent_analyzer: ErrorAnalysisAgentAnalyzerFn | None,
+    semaphore: asyncio.Semaphore,
+    fallback_to_rule_based: bool,
+) -> list[ErrorAnalysisFinding]:
+    async with semaphore:
+        try:
+            return await run_error_analysis_agent_async(task, analyzer=agent_analyzer)
+        except Exception:
+            if not fallback_to_rule_based:
+                raise
+            logger.exception(
+                "Error-analysis agent task failed; falling back to rule-based analyzer",
+                extra={
+                    "trace_id": task.trace_id,
+                    "scope": task.scope,
+                    "span_id": task.span_id,
+                },
+            )
+            return [_default_error_analyzer(task)]
+
+
+async def run_error_analysis_agent_tasks_in_parallel_async(
+    tasks: list[TraceErrorTask],
+    *,
+    agent_analyzer: ErrorAnalysisAgentAnalyzerFn | None = None,
+    max_concurrency: int = 8,
+    fallback_to_rule_based: bool = True,
+) -> list[ErrorAnalysisFinding]:
+    if not tasks:
+        return []
+
+    semaphore = asyncio.Semaphore(max(1, max_concurrency))
+    jobs = [
+        _run_single_agent_analysis(
+            task,
+            agent_analyzer=agent_analyzer,
+            semaphore=semaphore,
+            fallback_to_rule_based=fallback_to_rule_based,
+        )
+        for task in tasks
+    ]
+    nested_findings = await asyncio.gather(*jobs)
+    findings = [finding for task_findings in nested_findings for finding in task_findings]
+    logger.info(
+        "Completed parallel invokable error-analysis agent execution",
+        extra={
+            "task_count": len(tasks),
+            "finding_count": len(findings),
+            "max_concurrency": max(1, max_concurrency),
+            "fallback_to_rule_based": fallback_to_rule_based,
+        },
+    )
+    return findings
+
+
+def run_error_analysis_agent_tasks_in_parallel(
+    tasks: list[TraceErrorTask],
+    *,
+    agent_analyzer: ErrorAnalysisAgentAnalyzerFn | None = None,
+    max_concurrency: int = 8,
+    fallback_to_rule_based: bool = True,
+) -> list[ErrorAnalysisFinding]:
+    return asyncio.run(
+        run_error_analysis_agent_tasks_in_parallel_async(
+            tasks,
+            agent_analyzer=agent_analyzer,
+            max_concurrency=max_concurrency,
+            fallback_to_rule_based=fallback_to_rule_based,
+        )
+    )
 
 
 async def analyze_errors_in_parallel_async(

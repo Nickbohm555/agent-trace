@@ -220,6 +220,8 @@ class TraceAnalyzerService:
                 "run_id": run_id,
                 "result_key_count": len(coerced_result.keys()),
                 "has_harness_change_set": "harness_change_set" in coerced_result,
+                "has_parallel_error_findings": "parallel_error_findings" in coerced_result,
+                "parallel_error_count": coerced_result.get("parallel_error_count", 0),
             },
         )
         return coerced_result

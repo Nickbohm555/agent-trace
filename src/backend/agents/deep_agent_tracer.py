@@ -20,7 +20,7 @@ from agents.tracer_config import (
     resolve_reasoning_phase,
 )
 from agents.tracer_context import build_local_context_message, contains_local_context_message
-from agents.error_analysis_agent import analyze_errors_in_parallel, collect_error_tasks
+from agents.error_analysis_agent import collect_error_tasks, run_error_analysis_agent_tasks_in_parallel
 from agents.harness_change_synthesis import synthesize_harness_changes_from_findings
 from agents.tracer_middleware import (
     apply_loop_detection_injection,
@@ -161,11 +161,11 @@ class TracerParallelErrorAnalysisMiddleware(AgentMiddleware[TracerState, Any, An
 
         traces = self._trace_storage_service.load_traces(TraceStorageQuery(run_id=run_id, limit=200))
         error_tasks = collect_error_tasks(traces)
-        findings = analyze_errors_in_parallel(error_tasks)
+        findings = run_error_analysis_agent_tasks_in_parallel(error_tasks)
         payloads = [finding.to_payload() for finding in findings]
 
         logger.info(
-            "Injected parallel error-analysis findings into deep-agent state",
+            "Injected parallel error-analysis findings into deep-agent state via invokable agent runner",
             extra={
                 "run_id": run_id,
                 "error_count": len(error_tasks),

@@ -9,6 +9,7 @@ from agents.error_analysis_agent import (
     analyze_errors_in_parallel,
     collect_error_tasks,
     run_error_analysis_agent,
+    run_error_analysis_agent_tasks_in_parallel,
 )
 from schemas.trace import NormalizedTraceSpan, StoredTrace
 
@@ -99,3 +100,50 @@ def test_run_error_analysis_agent_returns_findings_for_single_task() -> None:
     assert isinstance(findings[0], ErrorAnalysisFinding)
     assert findings[0].trace_id == "trace-1"
     assert findings[0].suggested_fix_category == "timeout_or_retry_policy"
+
+
+def test_run_error_analysis_agent_tasks_in_parallel_aggregates_agent_findings() -> None:
+    tasks = [
+        TraceErrorTask(
+            trace_id=f"trace-{idx}",
+            scope="trace",
+            span_id=None,
+            message="custom",
+            error_type="CustomError",
+        )
+        for idx in range(3)
+    ]
+
+    def agent_analyzer(task: TraceErrorTask) -> list[ErrorAnalysisFinding]:
+        return [
+            ErrorAnalysisFinding(
+                trace_id=task.trace_id,
+                scope=task.scope,
+                span_id=task.span_id,
+                root_cause="agent root cause",
+                suggested_fix_category="agent_category",
+                confidence=0.7,
+                error_message=task.message,
+                error_type=task.error_type,
+            ),
+            ErrorAnalysisFinding(
+                trace_id=task.trace_id,
+                scope=task.scope,
+                span_id=task.span_id,
+                root_cause="agent secondary",
+                suggested_fix_category="agent_secondary",
+                confidence=0.5,
+                error_message=task.message,
+                error_type=task.error_type,
+            ),
+        ]
+
+    findings = run_error_analysis_agent_tasks_in_parallel(
+        tasks,
+        agent_analyzer=agent_analyzer,
+        max_concurrency=2,
+    )
+
+    assert len(findings) == 6
+    assert findings[0].suggested_fix_category == "agent_category"
+    assert findings[1].suggested_fix_category == "agent_secondary"

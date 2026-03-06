@@ -544,3 +544,53 @@
 
 ### Notes
 - Section 1 is complete and leaves orchestration/parallel invocation integration for Section 2.
+
+## Section 2: Parallel agent execution and state injection
+
+**Single goal:** Run the error-analysis agent in parallel for all tasks from loaded traces and inject the aggregated findings into tracer state.
+
+**Details:**
+- Use `collect_error_tasks(traces)` to get tasks; for each task (or batched subset), invoke the error-analysis agent from Section 1; aggregate all findings into one list; set `parallel_error_findings` and `parallel_error_count` in state.
+- Wire this path in orchestration or in deep-agent middleware (when run_id is set and traces are loaded). Do not change state schema; only populate it from agent results.
+- Optional: keep a fallback to rule-based analyzer for tests or low-cost mode; document both paths.
+
+### Completed work
+- Added a new parallel invokable-agent runner in `src/backend/agents/error_analysis_agent.py`:
+  - `run_error_analysis_agent_tasks_in_parallel_async(...)`
+  - `run_error_analysis_agent_tasks_in_parallel(...)`
+- The new runner now executes the Section 1 invokable agent for each `TraceErrorTask` and aggregates findings across tasks.
+- Added explicit fallback behavior: if an agent task errors, the runner logs the exception and falls back to `_default_error_analyzer` when `fallback_to_rule_based=True`.
+- Updated deep-agent middleware in `src/backend/agents/deep_agent_tracer.py` to use `run_error_analysis_agent_tasks_in_parallel(...)` and inject aggregated findings/count into tracer state.
+- Added additional graph-result visibility logging in `src/backend/services/trace_analyzer_service.py` for:
+  - `has_parallel_error_findings`
+  - `parallel_error_count`
+- Added/updated tests:
+  - `src/backend/tests/agents/test_error_analysis_agent.py`
+    - new test verifies parallel invokable-agent runner aggregates multiple findings per task.
+  - `src/backend/tests/agents/test_deep_agent_tracer.py`
+    - new middleware test monkeypatches the invokable-agent parallel runner and verifies this exact path is used for state injection.
+
+### Validation commands and outcomes
+- `docker compose exec backend uv run pytest tests/agents/test_error_analysis_agent.py tests/agents/test_deep_agent_tracer.py`
+  - Outcome: success (`23 passed in 4.10s`).
+- `docker compose exec backend uv run pytest tests/services/test_trace_analyzer_service.py`
+  - Outcome: success (`2 passed in 1.26s`).
+- `curl -s -o /dev/null -w "%{http_code}\\n" http://localhost:8001/docs`
+  - Outcome: success (`200`).
+
+### Container restart/rebuild logs
+- Pre-task full clean restart (fresh builds/logs):
+  - `docker compose down -v --rmi all`
+  - `docker compose build`
+  - `docker compose up -d`
+- Post-change refresh (changed container scope: backend-only code):
+  - `docker compose restart backend`
+- Running state check:
+  - `docker compose ps` -> `db`, `backend`, `frontend`, `chrome` all `Up` (`db` healthy).
+- Logs reviewed:
+  - `docker compose logs --tail=120 backend` -> startup complete, reloads triggered by modified backend/test files, final server process healthy.
+  - `docker compose logs --tail=60 frontend` -> Vite dev server ready.
+  - `docker compose logs --tail=60 db` -> PostgreSQL ready to accept connections.
+
+### Notes
+- Section 2 is complete via middleware wiring; tracer state is populated through the parallel invokable-agent path while preserving a rule-based fallback on agent task failure.
