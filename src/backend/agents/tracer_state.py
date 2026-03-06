@@ -1,0 +1,15 @@
+from __future__ import annotations
+
+from typing import Annotated
+
+from langchain_core.messages import AnyMessage
+from langgraph.graph.message import add_messages
+from typing_extensions import TypedDict
+
+
+class TracerState(TypedDict, total=False):
+    """Shared state for the tracer deep-agent graph skeleton."""
+
+    messages: Annotated[list[AnyMessage], add_messages]
+    current_trace_summary: str | None
+    run_id: str

@@ -101,3 +101,39 @@
 
 **Operational note:**
 - Changed container: `backend` (code and tests only). Restarted `backend` and verified `backend`, `frontend`, and `db` logs after restart.
+
+## Section 4: LangGraph tracer deep-agent graph skeleton
+
+**Depends on:** None (foundation for Sections 5–15).
+
+**Single goal:** Implement the tracer as a LangGraph **deep-agent** graph with entry, agent node(s), and conditional edges. **Do not add tools or middleware in this section**—only the graph backbone.
+
+**Deep-agent capability:** Planning (graph backbone); ReAct-style agent loop with shared state and conditional routing (continue vs end).
+
+**Details implemented:**
+- Added backend dependencies in `src/backend/pyproject.toml` and refreshed `src/backend/uv.lock`: `langgraph`, `langchain-core`, `langchain-openai`.
+- Added tracer graph state schema in `src/backend/agents/tracer_state.py` with `messages`, `current_trace_summary`, and `run_id`.
+- Implemented `src/backend/agents/langgraph_agent.py` skeleton with:
+  - `StateGraph` backbone (`START -> agent -> conditional -> END|agent`).
+  - `should_continue` conditional routing based on `tool_calls` in the last AI message.
+  - Minimal default agent node with no tools/middleware attached.
+- Added unit tests in `src/backend/tests/agents/test_langgraph_agent.py` for conditional routing and single-step default graph execution.
+- Added structured logging in graph helpers for node execution and route decisions.
+
+**Test results:**
+- `docker compose exec backend uv run pytest tests/agents/test_langgraph_agent.py`
+- Result: `2 passed in 0.33s` on 2026-03-06.
+
+**Useful logs (2026-03-06):**
+- Backend:
+  - `INFO:     Uvicorn running on http://0.0.0.0:8000`
+  - `INFO:     Application startup complete.`
+  - `WARNING:  WatchFiles detected changes ... Reloading...` (expected after dependency sync and file updates)
+- Frontend:
+  - `VITE v7.3.1  ready in 193 ms`
+  - `Local: http://localhost:5173/`
+- DB:
+  - `database system is ready to accept connections`
+
+**Operational note:**
+- Changed container: `backend`. Restarted `backend` after implementation and verified `docker compose ps` plus backend/frontend/db logs.

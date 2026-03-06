@@ -2,7 +2,7 @@
 
 Tasks are in **recommended implementation order** (1…n). Each section = **one context window**. Complete one section at a time. Sections 22–23 add UI to run the tracer and view results.
 
-**Current section to work on:** Section 4.
+**Current section to work on:** Section 5.
 
 ---
 
@@ -138,7 +138,7 @@ The following sections implement a **tracing deep-agent** that consumes traces f
 
 **How to test:** Invoke graph with dummy state; assert one agent step and transition; no tools called. Graph is the deep-agent backbone.
 
-**Test results:** (Add when section is complete.)
+**Test results:** `docker compose exec backend uv run pytest tests/agents/test_langgraph_agent.py` → 2 passed (2026-03-06).
 
 ---
 

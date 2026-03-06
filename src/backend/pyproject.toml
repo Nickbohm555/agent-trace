@@ -6,7 +6,10 @@ requires-python = ">=3.11"
 dependencies = [
   "alembic>=1.16.5",
   "fastapi>=0.116.1",
+  "langchain-core>=0.3.76",
+  "langchain-openai>=0.3.33",
   "langfuse>=2.60.3",
+  "langgraph>=0.6.6",
   "psycopg[binary]>=3.2.9",
   "uvicorn[standard]>=0.35.0",
 ]
