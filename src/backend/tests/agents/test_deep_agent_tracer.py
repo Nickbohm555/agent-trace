@@ -366,6 +366,72 @@ def test_build_deep_agent_tracer_synthesizes_harness_change_set_from_findings(
     assert result["harness_changes"] == result["harness_change_set"]["harness_changes"]
 
 
+def test_build_deep_agent_tracer_uses_model_synthesis_tool_for_harness_change_set(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_bind_tools(monkeypatch)
+    graph = build_deep_agent_tracer(
+        model=FakeMessagesListChatModel(
+            responses=[
+                AIMessage(
+                    content="Submitting structured harness changes.",
+                    tool_calls=[
+                        {
+                            "name": "propose_harness_changes",
+                            "args": {
+                                "run_id": "run-model-synthesis",
+                                "trace_ids": ["trace-model-99"],
+                                "summary": "Model synthesized a targeted prompt fix.",
+                                "harness_changes": [
+                                    {
+                                        "change_id": "hc-model-001",
+                                        "title": "Strengthen verifier prompt guardrails",
+                                        "category": "prompt",
+                                        "priority": "high",
+                                        "confidence": 0.91,
+                                        "prompt_edit": {
+                                            "target": "verification_prompt",
+                                            "action": "append",
+                                            "instruction": "Validate expected output shape before final response.",
+                                            "rationale": "Trace indicated unvalidated output assumptions.",
+                                            "expected_outcome": "Fewer schema mismatches in final answers.",
+                                        },
+                                    }
+                                ],
+                            },
+                            "id": "tc-harness-tool-1",
+                        }
+                    ],
+                ),
+                AIMessage(content="Harness changes proposed."),
+            ],
+        )
+    )
+
+    result = graph.invoke(
+        {
+            "messages": [HumanMessage(content="Use findings to propose harness changes")],
+            "run_id": "run-model-synthesis",
+            "pre_completion_verified": True,
+            "parallel_analysis_completed": True,
+            "parallel_error_findings": [
+                {
+                    "trace_id": "trace-err-1",
+                    "suggested_fix_category": "timeout_or_retry_policy",
+                }
+            ],
+        }
+    )
+
+    assert result["harness_change_set"]["run_id"] == "run-model-synthesis"
+    assert result["harness_change_set"]["trace_ids"] == ["trace-model-99"]
+    assert result["harness_change_set"]["summary"] == "Model synthesized a targeted prompt fix."
+    assert result["harness_change_set"]["harness_changes"][0]["change_id"] == "hc-model-001"
+    assert result["harness_change_set"]["harness_changes"][0]["title"] == "Strengthen verifier prompt guardrails"
+    assert result["harness_change_set"]["harness_changes"][0]["category"] == "prompt"
+    assert result["harness_changes"] == result["harness_change_set"]["harness_changes"]
+
+
 def test_build_deep_agent_tracer_skips_harness_change_synthesis_without_findings(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -465,6 +531,7 @@ def test_build_deep_agent_tracer_registers_tracer_tools(monkeypatch: pytest.Monk
     assert graph == "compiled-graph"
     tool_names = [tool.name for tool in captured["tools"]]
     assert tool_names == [
+        "propose_harness_changes",
         "read_trace",
         "list_directory",
         "read_file",

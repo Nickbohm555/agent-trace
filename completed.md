@@ -594,3 +594,44 @@
 
 ### Notes
 - Section 2 is complete via middleware wiring; tracer state is populated through the parallel invokable-agent path while preserving a rule-based fallback on agent task failure.
+
+## Section 3: Synthesis tool or step for main tracer agent
+
+**Single goal:** Add one mechanism by which the main tracer agent produces a `HarnessChangeSet` from `parallel_error_findings` (synthesis tool or dedicated synthesis step).
+
+**Details:**
+- Implement either: (a) a tool the main agent can call with findings and that returns a proposed `HarnessChangeSet`, or (b) a dedicated synthesis node/step in the graph where the model outputs structured harness changes. Graph result state must include `harness_change_set` and `harness_changes` from this path.
+- Reuse `HarnessChangeSet` and schemas from `schemas/harness_changes.py`. Do not remove rule-based synthesis middleware in this section; only add the agent-driven path.
+
+### Completed work
+- Added agent-driven synthesis tool support in `src/backend/agents/deep_agent_tracer.py` via new tool `propose_harness_changes` (`build_propose_harness_changes_tool`).
+- Registered `propose_harness_changes` in deep-agent toolset so the main tracer agent can submit structured harness changes directly.
+- Updated `TracerHarnessSynthesisMiddleware` to capture model-authored `propose_harness_changes` tool-call payloads, validate with `HarnessChangeSet`, and inject:
+  - `harness_change_set`
+  - `harness_changes`
+- Kept rule-based synthesis (`synthesize_harness_changes_from_findings`) as fallback path when model-authored synthesis is absent.
+- Added test coverage in `src/backend/tests/agents/test_deep_agent_tracer.py`:
+  - `test_build_deep_agent_tracer_uses_model_synthesis_tool_for_harness_change_set`
+  - Updated tool-registration test to expect `propose_harness_changes` in tracer tools.
+
+### Validation commands and outcomes
+- `docker compose exec backend uv run pytest tests/agents/test_deep_agent_tracer.py`
+  - Outcome: success (`20 passed in 5.21s`).
+
+### Container restart/rebuild logs
+- Pre-task full clean restart (fresh builds/logs):
+  - `docker compose down -v --rmi all`
+  - `docker compose build`
+  - `docker compose up -d`
+  - Note: transient Docker container-name conflicts occurred during startup (`agent-trace-frontend`/`backend`); resolved by removing stale `agent-trace-*` containers and rerunning startup.
+- Post-change refresh (changed container scope: backend code + backend tests):
+  - `docker compose restart backend`
+- Running state check:
+  - `docker compose ps` -> `db`, `backend`, `frontend`, `chrome` all `Up` (`db` healthy).
+- Logs reviewed:
+  - `docker compose logs --no-color --tail=160 backend` -> uvicorn startup complete, watch reloads after tracer/test file edits, final server process healthy.
+  - `docker compose logs --no-color --tail=80 frontend` -> Vite dev server ready.
+  - `docker compose logs --no-color --tail=80 db` -> PostgreSQL ready to accept connections.
+
+### Notes
+- Section 3 is complete with an agent-authored synthesis mechanism (tool path) while preserving rule-based synthesis fallback for continuity.

@@ -9,7 +9,7 @@ from langchain.agents.middleware import AgentMiddleware
 from langchain.agents.middleware.types import ModelRequest, hook_config
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage, SystemMessage, ToolMessage
-from langchain_core.tools import BaseTool
+from langchain_core.tools import BaseTool, StructuredTool
 from langgraph.prebuilt.tool_node import ToolCallRequest
 
 from agents.tracer_config import (
@@ -30,6 +30,7 @@ from agents.tracer_middleware import (
 )
 from agents.tracer_prompts import build_tracer_system_prompt
 from agents.tracer_state import TracerState
+from schemas.harness_changes import HarnessChangeSet
 from schemas.trace import TraceStorageQuery
 from services.sandbox_service import SandboxService
 from services.trace_storage_service import TraceStorageService
@@ -271,8 +272,23 @@ class TracerReasoningBudgetMiddleware(AgentMiddleware[TracerState, Any, Any]):
 class TracerHarnessSynthesisMiddleware(AgentMiddleware[TracerState, Any, Any]):
     """Synthesize structured harness changes from parallel error findings."""
 
-    def before_agent(self, state: TracerState, runtime: Any) -> dict[str, Any] | None:
+    def after_model(self, state: TracerState, runtime: Any) -> dict[str, Any] | None:
         del runtime
+        model_change_set = self._extract_model_synthesized_change_set(state)
+        if model_change_set is not None:
+            logger.info(
+                "Captured model-authored harness changes from synthesis tool call",
+                extra={
+                    "run_id": state.get("run_id"),
+                    "change_count": len(model_change_set.get("harness_changes", [])),
+                    "trace_id_count": len(model_change_set.get("trace_ids", [])),
+                },
+            )
+            return {
+                "harness_change_set": model_change_set,
+                "harness_changes": model_change_set.get("harness_changes", []),
+            }
+
         existing_change_set = state.get("harness_change_set")
         if isinstance(existing_change_set, Mapping) and existing_change_set:
             return None
@@ -296,6 +312,33 @@ class TracerHarnessSynthesisMiddleware(AgentMiddleware[TracerState, Any, Any]):
             "harness_change_set": dumped_change_set,
             "harness_changes": dumped_change_set.get("harness_changes", []),
         }
+
+    @staticmethod
+    def _extract_model_synthesized_change_set(state: Mapping[str, Any]) -> dict[str, Any] | None:
+        messages = list(state.get("messages", []))
+        if not messages or not isinstance(messages[-1], AIMessage):
+            return None
+
+        run_id = state.get("run_id")
+        for tool_call in reversed(messages[-1].tool_calls or []):
+            if tool_call.get("name") != "propose_harness_changes":
+                continue
+            if not isinstance(tool_call.get("args"), dict):
+                continue
+            payload = dict(tool_call["args"])
+            if not payload.get("run_id") and isinstance(run_id, str):
+                payload["run_id"] = run_id
+            try:
+                parsed = HarnessChangeSet.model_validate(payload)
+            except Exception:
+                logger.warning(
+                    "Ignoring invalid model-authored harness change set payload",
+                    extra={"run_id": run_id},
+                    exc_info=True,
+                )
+                return None
+            return parsed.model_dump(mode="json")
+        return None
 
 
 class TracerTimeBudgetMiddleware(AgentMiddleware[TracerState, Any, Any]):
@@ -365,12 +408,44 @@ class TracerLoopDetectionMiddleware(AgentMiddleware[TracerState, Any, Any]):
         return updates
 
 
+def build_propose_harness_changes_tool() -> BaseTool:
+    """Create a tool that validates and returns model-authored HarnessChangeSet payloads."""
+
+    def _propose_harness_changes(
+        run_id: str | None = None,
+        trace_ids: list[str] | None = None,
+        summary: str | None = None,
+        harness_changes: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
+        change_set = HarnessChangeSet(
+            run_id=run_id,
+            trace_ids=trace_ids or [],
+            summary=summary,
+            harness_changes=harness_changes or [],
+        )
+        dumped = change_set.model_dump(mode="json")
+        return {
+            "accepted": True,
+            "harness_change_set": dumped,
+            "change_count": len(dumped.get("harness_changes", [])),
+        }
+
+    return StructuredTool.from_function(
+        name="propose_harness_changes",
+        description=(
+            "Propose a structured harness change set synthesized from parallel error findings. "
+            "Use this tool to submit run_id, trace_ids, summary, and harness_changes."
+        ),
+        func=_propose_harness_changes,
+    )
+
+
 def _build_tracer_tools(
     *,
     trace_storage_service: TraceStorageService | None,
     sandbox_service: SandboxService | None,
 ) -> list[BaseTool]:
-    tools: list[BaseTool] = []
+    tools: list[BaseTool] = [build_propose_harness_changes_tool()]
     if trace_storage_service is not None:
         tools.append(build_read_trace_tool(trace_storage_service))
     if sandbox_service is not None:
