@@ -346,4 +346,68 @@ describe("App tracer run UI", () => {
     expect(await screen.findByText("Failed")).toBeTruthy();
     expect(screen.getByText("Tracer run failed with status 500.")).toBeTruthy();
   });
+
+  it("resets form, status, and result panel after a successful run", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        run_id: "run-reset-1",
+        target_repo_url: "https://example.com/repo.git",
+        trace_ids: ["trace-reset-a"],
+        fetched_trace_count: 1,
+        persisted_trace_count: 1,
+        loaded_trace_count: 1,
+        harness_change_set: {
+          run_id: "run-reset-1",
+          trace_ids: ["trace-reset-a"],
+          summary: "Reset flow run completed.",
+          created_at: "2026-03-06T00:00:00Z",
+          harness_changes: [
+            {
+              change_id: "chg-reset-1",
+              title: "Reset verification coverage",
+              category: "prompt",
+              priority: "medium",
+              confidence: 0.77,
+              prompt_edit: {
+                target: "verification_prompt",
+                action: "append",
+                instruction: "Validate reset clears state.",
+                rationale: "Need deterministic reset coverage.",
+                expected_outcome: "Regression-safe reset behavior.",
+              },
+            },
+          ],
+        },
+        improvement_metrics: null,
+      }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    fireEvent.change(screen.getByLabelText("Run ID"), { target: { value: "run-reset-1" } });
+    fireEvent.change(screen.getByLabelText("Trace IDs (comma-separated)"), {
+      target: { value: "trace-reset-a" },
+    });
+    fireEvent.change(screen.getByLabelText("Run Name"), { target: { value: "reset-check" } });
+    fireEvent.change(screen.getByLabelText("Limit"), { target: { value: "17" } });
+    fireEvent.click(screen.getByRole("button", { name: "Run Tracer" }));
+
+    expect(await screen.findByText("Completed")).toBeTruthy();
+    expect(screen.getByText("Reset flow run completed.")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Run Summary" })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Reset" }));
+
+    expect(screen.getByText("Idle")).toBeTruthy();
+    expect(screen.queryByText("Completed")).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Run Summary" })).toBeNull();
+    expect(screen.queryByText("Reset flow run completed.")).toBeNull();
+    expect(screen.queryByText("Tracer run failed with status 500.")).toBeNull();
+    expect((screen.getByLabelText("Run ID") as HTMLInputElement).value).toBe("");
+    expect((screen.getByLabelText("Trace IDs (comma-separated)") as HTMLInputElement).value).toBe("");
+    expect((screen.getByLabelText("Run Name") as HTMLInputElement).value).toBe("");
+    expect((screen.getByLabelText("Limit") as HTMLInputElement).value).toBe("50");
+  });
 });

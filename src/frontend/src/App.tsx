@@ -374,6 +374,7 @@ export default function App() {
               type="button"
               className="secondary"
               onClick={() => {
+                console.info("Resetting tracer run form and UI state");
                 setFormState(initialFormState);
                 setErrorMessage("");
                 setResult(null);

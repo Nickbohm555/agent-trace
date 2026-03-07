@@ -2,7 +2,7 @@
 
 Tasks are in **recommended implementation order** (1…n). Each section = **one context window**. Sections are atomic (one deliverable each).
 
-**Current section to work on:** Section E14
+**Current section to work on:** Section E15
 
 ---
 
@@ -354,8 +354,9 @@ The following sections are **one section = one E2E test**. Use AGENTS.md for Doc
 
 **How to test:** `npm run test`; assert Idle and cleared form/result after Reset.
 
-**Test results:** (Add when section is complete.)
-- Command and outcome.
+**Test results:** (Section complete on March 6, 2026.)
+- `docker compose exec frontend npm run test`
+  - Outcome: success (`1 passed file`, `9 passed tests`), including `resets form, status, and result panel after a successful run`.
 
 ---
 

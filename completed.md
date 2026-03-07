@@ -1571,3 +1571,71 @@
 
 ### Notes
 - Section E13 complete.
+
+## Section E14: E2E (mocked) — Reset clears form and result
+
+**Single goal:** After a successful run (mocked), click Reset; assert Job Status returns to "Idle", result section is gone, error message cleared, and form inputs are back to initial values (e.g. Run ID empty).
+
+**Details:**
+- Submit with mocked success; wait for Completed and result visible. Click "Reset" button. Assert status "Idle"; assert no "Completed" or result summary; assert Run ID (and Trace IDs) input values are empty or initial. Ensures full reset flow works.
+
+**Tech stack and dependencies**
+- Vitest, @testing-library/react. No new packages.
+
+**Files and purpose**
+
+| File | Purpose |
+|------|--------|
+| src/frontend/src/App.test.tsx | Added test: Reset after success clears state and form. |
+| src/frontend/src/App.tsx | Added reset action log for visibility. |
+
+**How to test:** `npm run test`; assert Idle and cleared form/result after Reset.
+
+### Completed work
+- Reused existing frontend architecture and test patterns from `src/frontend/src/App.test.tsx`, `src/frontend/src/App.tsx`, and `src/frontend/src/utils/api.ts` before editing.
+- Added test `resets form, status, and result panel after a successful run` in `src/frontend/src/App.test.tsx`.
+- Test asserts after Reset:
+  - Job status returns to `Idle`.
+  - Completed/result UI is cleared (`Run Summary` no longer present).
+  - Form values reset (`Run ID`, `Trace IDs`, `Run Name` empty; `Limit` reset to `50`).
+- Added frontend visibility log in `src/frontend/src/App.tsx` reset handler:
+  - `console.info("Resetting tracer run form and UI state")`.
+- Fixed one test-run failure during implementation (`Invalid Chai property: toHaveValue`) by switching to direct input `.value` assertions compatible with current Vitest setup.
+
+### Validation commands and outcomes
+- Fresh full app reboot before implementation:
+  - `docker compose down -v --rmi all`
+  - `docker compose build`
+  - `docker compose up -d`
+  - Outcome: success.
+- Required test command from section:
+  - `docker compose exec frontend npm run test`
+  - First run: failed (1 test) on matcher compatibility (`toHaveValue`).
+  - Second run after fix: success (`1 passed file`, `9 passed tests`).
+- Post-change application restart and verification:
+  - `docker compose restart`
+  - `docker compose ps`
+  - `curl -s -o /tmp/health.out -w '%{http_code}' http://localhost:8001/api/health && cat /tmp/health.out`
+  - `curl -s -o /tmp/front.out -w '%{http_code}' http://localhost:5174 && head -n 2 /tmp/front.out`
+  - Outcome: backend/frontend reachable (200), db healthy, all services up.
+- Frontend/chrome debug endpoint verification per AGENTS workflow:
+  - `curl -s http://127.0.0.1:9223/json/list | head -c 400`
+  - Outcome: JSON target list returned with `webSocketDebuggerUrl`.
+
+### Useful logs
+- Frontend test logs:
+  - `✓ src/App.test.tsx (9 tests)`
+  - `Test Files  1 passed (1)`
+  - `Tests  9 passed (9)`
+  - Reset-flow log visibility observed:
+    - `Resetting tracer run form and UI state`
+- Backend logs (`docker compose logs --tail 120 backend`):
+  - Uvicorn/alembic startup successful after restart.
+  - `GET /api/health` returned `200 OK`.
+- Frontend logs (`docker compose logs --tail 120 frontend`):
+  - Vite dev server started cleanly after restart.
+- DB logs (`docker compose logs --tail 120 db`):
+  - PostgreSQL restarted cleanly and reports `database system is ready to accept connections`.
+
+### Notes
+- Section E14 complete on March 6, 2026.
