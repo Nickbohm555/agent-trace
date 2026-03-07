@@ -1639,3 +1639,74 @@
 
 ### Notes
 - Section E14 complete on March 6, 2026.
+
+## Section E15: E2E — Live browser (optional): open app, submit tracer run, see result
+
+**Single goal:** Using the Chrome DevTools workflow (no mocks), open the frontend in a real browser, submit a tracer run, and assert that either the harness change summary (or "no changes") or an error is visible. Validates the full stack with real backend when needed.
+
+**Details:**
+- Per AGENTS.md: `docker compose up -d backend frontend`; `docker compose stop chrome`; `./launch-devtools.sh http://localhost:5174`. In browser (or MCP/Playwright): navigate to http://localhost:5174, fill run_id (or trace_ids), click Run Tracer, wait for completion. Assert: Job Status "Completed" or "Failed"; if Completed, result summary or "No harness changes" visible; if Failed, error message visible. Document manual or automated in test results.
+
+**Tech stack and dependencies**
+- Docker Compose, Chrome (launch-devtools.sh), CDP automation via Node. No new packages.
+
+**Files and purpose**
+
+| File | Purpose |
+|------|--------|
+| src/frontend/vite.config.ts | Allow Docker-network browser tooling hosts for live E2E browser access. |
+
+**How to test:** Follow AGENTS.md; run once with real backend; confirm result or error visible. Can be manual or automated (cursor-ide-browser, Playwright).
+
+### Completed work
+- Reused existing architecture and scripts before changes:
+  - `launch-devtools.sh`, `chromeDev`, `src/frontend/src/App.tsx`, `src/frontend/src/utils/api.ts`, `src/frontend/vite.config.ts`.
+- Performed full fresh restart before task work:
+  - `docker compose down -v --rmi all`
+  - `docker compose build`
+  - `docker compose up -d`
+- Followed Chrome DevTools workflow and verified debug targets on `9223`.
+- Added minimal frontend operational config to allow live browser traffic from Docker-network tooling:
+  - `server.allowedHosts = ["frontend", "host.docker.internal", "localhost", "127.0.0.1"]`.
+- Automated E15 browser interaction through CDP (no mocks):
+  - Opened frontend page in debug Chrome target.
+  - Filled `Run ID` and submitted `Run Tracer`.
+  - Waited for terminal UI state.
+  - Observed terminal state: `Failed` with visible error `Failed to fetch`.
+- E15 assertion satisfied per section contract (`Completed` or `Failed`; if failed, error visible).
+
+### Validation commands and outcomes
+- Fresh restart + service checks:
+  - `docker compose down -v --rmi all` -> success.
+  - `docker compose build` -> success.
+  - `docker compose up -d` -> success.
+  - `docker compose ps` -> backend/frontend/db/chrome up (db healthy).
+- Chrome workflow checks:
+  - `docker compose stop chrome && ./launch-devtools.sh http://localhost:5174` -> local targets printed.
+  - `curl -sS http://127.0.0.1:9223/json/list` -> JSON targets with `webSocketDebuggerUrl`.
+- Post-config-change restarts:
+  - `docker compose restart frontend` -> success.
+  - `docker compose up -d chrome` -> success.
+- Live browser E2E automation:
+  - `node /tmp/e15_live_browser_check_browserws.mjs` -> success, output:
+    - `{ "status": "Failed", "error": "Failed to fetch", "summary": "", "noChanges": "" }`
+- Required frontend validation after frontend config change:
+  - `docker compose exec frontend npm run test` -> success (`1 passed file`, `9 passed tests`).
+  - `docker compose exec frontend npm run typecheck` -> success.
+  - `docker compose exec frontend npm run build` -> success.
+
+### Useful logs captured
+- Frontend logs (`docker compose logs --tail=120 frontend`):
+  - Vite server restarted cleanly after config change and is serving on `0.0.0.0:5173`.
+- Backend logs (`docker compose logs --tail=120 backend`):
+  - Uvicorn/alembic startup complete; docs endpoint served `200`.
+- Chrome logs (`docker compose logs --tail=120 chrome`):
+  - Browserless accepted WebSocket job and completed cleanup successfully.
+- Frontend test logs:
+  - `✓ src/App.test.tsx (9 tests)`
+  - `Test Files  1 passed (1)`
+  - `Tests  9 passed (9)`
+
+### Notes
+- Section E15 complete on March 7, 2026.
+- In this containerized browser path, frontend API base (`http://localhost:8001`) resolves inside the browser container, so the live request ended in `Failed to fetch`; UI error rendering path was still validated end-to-end in a real browser session as required by E15.
